@@ -181,7 +181,7 @@
     {:else}
       <div class="services-list">
         {#each configs as config}
-          <div class="service-card">
+          <div class="service-card" on:click={() => openConfigModal(config)}>
             <div class="service-header">
               <div class="service-title">
                 <h3>PXE Service</h3>
@@ -246,22 +246,22 @@
             
             {#if isAdmin}
               <div class="service-actions">
-                <button class="btn-action" on:click={() => openConfigModal(config)} disabled={loadingAction}>
+                <button class="btn-action" on:click|stopPropagation={() => openConfigModal(config)} disabled={loadingAction}>
                   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                     <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path>
                     <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path>
                   </svg>
-                  查看配置
+                  编辑配置
                 </button>
                 
                 {#if config.container_status?.includes('running')}
-                  <button class="btn-warning" on:click={() => handleStop(config)} disabled={loadingAction}>
+                  <button class="btn-warning" on:click|stopPropagation={() => handleStop(config)} disabled={loadingAction}>
                     <svg viewBox="0 0 24 24" fill="currentColor">
                       <rect x="6" y="6" width="12" height="12" rx="2"></rect>
                     </svg>
                     停止
                   </button>
-                  <button class="btn-action" on:click={() => handleRestart(config)} disabled={loadingAction}>
+                  <button class="btn-action" on:click|stopPropagation={() => handleRestart(config)} disabled={loadingAction}>
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                       <polyline points="23 4 23 10 17 10"></polyline>
                       <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path>
@@ -269,7 +269,7 @@
                     重启
                   </button>
                 {:else}
-                  <button class="btn-success" on:click={() => handleStart(config)} disabled={loadingAction}>
+                  <button class="btn-success" on:click|stopPropagation={() => handleStart(config)} disabled={loadingAction}>
                     <svg viewBox="0 0 24 24" fill="currentColor">
                       <polygon points="5 3 19 12 5 21 5 3"></polygon>
                     </svg>
@@ -277,7 +277,7 @@
                   </button>
                 {/if}
                 
-                <button class="btn-action" on:click={() => openLogsModal(config)} disabled={loadingAction}>
+                <button class="btn-action" on:click|stopPropagation={() => openLogsModal(config)} disabled={loadingAction}>
                   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                     <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
                     <polyline points="14 2 14 8 20 8"></polyline>
@@ -475,6 +475,13 @@
     border-radius: var(--radius-md);
     padding: var(--spacing-xl);
     box-shadow: var(--shadow-card);
+    cursor: pointer;
+    transition: all var(--transition-fast);
+    
+    &:hover {
+      transform: translateY(-2px);
+      box-shadow: var(--shadow-strong);
+    }
   }
   
   .service-header {
