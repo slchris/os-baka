@@ -3,10 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.core.config import settings
 from app.api.v1 import api_router
 from app.init_db import main as init_db_main
-import subprocess
 
-# Run migrations
-subprocess.run(["alembic", "upgrade", "head"], check=True)
 
 # Initialize database
 init_db_main()

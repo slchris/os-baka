@@ -12,8 +12,7 @@ from app.models.asset import Asset
 def init_db(db: Session) -> None:
     """Initialize database with default data"""
     
-    # Create tables
-    Base.metadata.create_all(bind=engine)
+
     
     # Check if admin user exists
     admin = db.query(User).filter(User.username == "admin").first()
