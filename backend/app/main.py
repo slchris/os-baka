@@ -2,12 +2,8 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.core.config import settings
 from app.api.v1 import api_router
-from app.core.database import wait_for_db
 from app.init_db import main as init_db_main
 import subprocess
-
-# Wait for the database to be ready
-wait_for_db()
 
 # Run migrations
 subprocess.run(["alembic", "upgrade", "head"], check=True)

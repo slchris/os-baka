@@ -3,7 +3,7 @@ Database initialization script
 Creates default admin user and performs other setup tasks
 """
 from sqlalchemy.orm import Session
-from app.core.database import SessionLocal, engine, Base
+from app.core.database import SessionLocal, engine, Base, wait_for_db
 from app.core.security import get_password_hash
 from app.models.user import User
 from app.models.asset import Asset
@@ -42,6 +42,9 @@ def main() -> None:
     """Main function to run initialization"""
     print("🚀 开始初始化数据库...")
     
+    # Wait for the database to be ready
+    wait_for_db()
+
     db = SessionLocal()
     try:
         init_db(db)
