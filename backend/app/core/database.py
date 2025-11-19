@@ -2,6 +2,8 @@ from sqlalchemy import create_engine
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker
 from app.core.config import settings
+import time
+import logging
 
 # Create database engine
 engine = create_engine(
@@ -24,3 +26,19 @@ def get_db():
         yield db
     finally:
         db.close()
+
+def wait_for_db():
+    """Wait for the database to be ready"""
+    logging.info("Waiting for database...")
+    retries = 10
+    while retries > 0:
+        try:
+            engine.connect()
+            logging.info("Database is ready!")
+            return
+        except Exception as e:
+            logging.warning(f"Database not ready, retrying... ({retries} retries left)")
+            retries -= 1
+            time.sleep(5)
+    logging.error("Could not connect to database after multiple retries. Exiting.")
+    exit(1)

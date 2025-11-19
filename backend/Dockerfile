@@ -14,6 +14,8 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Copy application code
 COPY . .
 
-COPY wait-for-it.sh /usr/local/bin/wait-for-it.sh
-COPY start.sh /app/start.sh
-RUN chmod +x /usr/local/bin/wait-for-it.sh /app/start.sh
+# Expose port
+EXPOSE 8000
+
+# Run the application
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
