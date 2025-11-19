@@ -27,16 +27,16 @@
   }
   
   // Initialize authentication on mount
-  onMount(async () => {
-    await authStore.init()
-    
-    updateRoute()
-    window.addEventListener('hashchange', updateRoute)
-    
-    // Redirect to login if not authenticated
-    if (!isAuthenticated && window.location.pathname !== '/login') {
-      window.location.href = '/login'
-    }
+  onMount(() => {
+    authStore.init().then(() => {
+      updateRoute()
+      window.addEventListener('hashchange', updateRoute)
+      
+      // Redirect to login if not authenticated
+      if (!isAuthenticated && window.location.pathname !== '/login') {
+        window.location.href = '/login'
+      }
+    })
     
     return () => {
       window.removeEventListener('hashchange', updateRoute)
@@ -117,26 +117,5 @@
   .main-content {
     flex: 1;
     width: 100%;
-  }
-  
-  .placeholder-page {
-    min-height: 80vh;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    gap: var(--spacing-md);
-    
-    h2 {
-      font: var(--title-1);
-      color: var(--systemPrimary);
-      margin: 0;
-    }
-    
-    p {
-      font: var(--body);
-      color: var(--systemSecondary);
-      margin: 0;
-    }
   }
 </style>

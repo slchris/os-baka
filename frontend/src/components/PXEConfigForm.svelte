@@ -98,13 +98,21 @@
       handleClose()
     }
   }
+
+  function handleBackdropKeydown(e: KeyboardEvent) {
+    if (e.key === 'Escape') {
+      handleClose()
+    }
+  }
 </script>
 
 {#if show}
+  <!-- svelte-ignore a11y-no-static-element-interactions -->
+  <!-- svelte-ignore a11y-click-events-have-key-events -->
   <div 
     class="modal-backdrop" 
     on:click={handleBackdropClick}
-    on:keydown={(e) => e.key === 'Escape' && handleClose()}
+    on:keydown={handleBackdropKeydown}
     role="dialog"
     aria-modal="true"
     tabindex="-1"

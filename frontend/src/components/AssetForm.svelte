@@ -16,7 +16,7 @@
     os_type: asset?.os_type || 'ubuntu',
     status: asset?.status || 'pending',
     encryption_enabled: asset?.encryption_enabled || false,
-    usb_key: asset?.usb_key || undefined
+    usb_key: asset?.usb_key || ''
   }
   
   let loading = false
@@ -75,7 +75,7 @@
       os_type: 'ubuntu',
       status: 'pending',
       encryption_enabled: false,
-      usb_key: null
+      usb_key: ''
     }
     error = null
   }
@@ -85,13 +85,21 @@
       handleClose()
     }
   }
+
+  function handleBackdropKeydown(e: KeyboardEvent) {
+    if (e.key === 'Escape') {
+      handleClose()
+    }
+  }
 </script>
 
 {#if show}
+  <!-- svelte-ignore a11y-no-static-element-interactions -->
+  <!-- svelte-ignore a11y-click-events-have-key-events -->
   <div 
     class="modal-backdrop" 
     on:click={handleBackdropClick}
-    on:keydown={(e) => e.key === 'Escape' && handleClose()}
+    on:keydown={handleBackdropKeydown}
     role="dialog"
     aria-modal="true"
     tabindex="-1"

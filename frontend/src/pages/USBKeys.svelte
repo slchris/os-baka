@@ -314,12 +314,12 @@
       {#if !initResponse}
         <form on:submit|preventDefault={handleInit}>
           <div class="form-group">
-            <label>标签 *</label>
-            <input type="text" bind:value={initLabel} required />
+            <label for="initLabel">标签 *</label>
+            <input id="initLabel" type="text" bind:value={initLabel} required />
           </div>
           <div class="form-group">
-            <label>描述</label>
-            <textarea bind:value={initDescription} rows="3"></textarea>
+            <label for="initDescription">描述</label>
+            <textarea id="initDescription" bind:value={initDescription} rows="3"></textarea>
           </div>
           <div class="modal-actions">
             <button type="button" class="btn-secondary" on:click={closeModals}>取消</button>
@@ -359,8 +359,8 @@
       <h2>绑定到资产</h2>
       <form on:submit|preventDefault={handleBind}>
         <div class="form-group">
-          <label>选择资产 *</label>
-          <select bind:value={bindAssetId} required>
+          <label for="bindAssetId">选择资产 *</label>
+          <select id="bindAssetId" bind:value={bindAssetId} required>
             <option value={null}>-- 选择资产 --</option>
             {#each assets as asset}
               <option value={asset.id}>{asset.hostname} ({asset.ip_address})</option>
@@ -416,12 +416,12 @@
       <h2>从备份恢复</h2>
       <form on:submit|preventDefault={handleRestore}>
         <div class="form-group">
-          <label>备份UUID *</label>
-          <input type="text" bind:value={restoreBackupUuid} required />
+          <label for="restoreBackupUuid">备份UUID *</label>
+          <input id="restoreBackupUuid" type="text" bind:value={restoreBackupUuid} required />
         </div>
         <div class="form-group">
-          <label>备份密码 *</label>
-          <input type="password" bind:value={restoreBackupPassword} required />
+          <label for="restoreBackupPassword">备份密码 *</label>
+          <input id="restoreBackupPassword" type="password" bind:value={restoreBackupPassword} required />
         </div>
         <div class="modal-actions">
           <button type="button" class="btn-secondary" on:click={closeModals}>取消</button>
@@ -444,8 +444,8 @@
       {#if !rebuildResponse}
         <form on:submit|preventDefault={handleRebuild}>
           <div class="form-group">
-            <label>恢复代码 *</label>
-            <input type="password" bind:value={rebuildRecoveryCode} required />
+            <label for="rebuildRecoveryCode">恢复代码 *</label>
+            <input id="rebuildRecoveryCode" type="password" bind:value={rebuildRecoveryCode} required />
           </div>
           <div class="modal-actions">
             <button type="button" class="btn-secondary" on:click={closeModals}>取消</button>
