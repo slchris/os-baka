@@ -1,0 +1,61 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  scan:
+    name: Code Scan
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Trufflehog Secret Scan
+        uses: trufflesecurity/trufflehog@main
+        with:
+          path: .
+          base: ${{ github.event.repository.default_branch }}
+          head: HEAD
+          extra_args: --debug
+
+      - name: Semgrep SAST Scan
+        uses: returntocorp/semgrep-action@v1
+        with:
+          publishToken: ${{ secrets.SEMGREP_APP_TOKEN }}
+
+  build-and-push:
+    name: Build and Push Docker Images
+    runs-on: ubuntu-latest
+    needs: scan
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Login to GitHub Container Registry
+        uses: docker/login-action@v2
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push backend image
+        uses: docker/build-push-action@v4
+        with:
+          context: backend
+          file: backend/Dockerfile
+          push: true
+          tags: ghcr.io/${{ github.repository_owner }}/os-baka-backend:latest
+
+      - name: Build and push frontend image
+        uses: docker/build-push-action@v4
+        with:
+          context: frontend
+          file: frontend/Dockerfile
+          push: true
+          tags: ghcr.io/${{ github.repository_owner }}/os-baka-frontend:latest
