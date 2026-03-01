@@ -142,6 +142,10 @@ export interface NodeCreateRequest {
   os_type?: string;
   os_version?: string;
   mirror_url?: string;
+  timezone?: string;
+  root_password?: string;
+  ssh_enabled?: boolean;
+  ssh_root_login?: boolean;
   encryption_enabled?: boolean;
   encryption_passphrase?: string;
   tpm_enabled?: boolean;
@@ -158,6 +162,9 @@ export interface NodeUpdateRequest {
   os_type?: string;
   os_version?: string;
   mirror_url?: string;
+  timezone?: string;
+  ssh_enabled?: boolean;
+  ssh_root_login?: boolean;
   encryption_enabled?: boolean;
   encryption_passphrase?: string;
   tpm_enabled?: boolean;

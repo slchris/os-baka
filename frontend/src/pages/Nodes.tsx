@@ -1,9 +1,11 @@
 
 import React, { useState, useRef, useEffect } from 'react';
-import { Upload, RefreshCcw, HardDrive, Shield, Plus, Download, Bot, Trash2, Filter, Hash, Network, Activity, Cpu, Laptop, Save, X, Eye, EyeOff, Pencil, Zap, Loader2, CheckCircle2, AlertCircle, ChevronDown } from 'lucide-react';
+import { Upload, Plus, Bot, Filter, Save, X, Eye, EyeOff, Pencil, Zap, Loader2, CheckCircle2, AlertCircle, ChevronDown, Network, Laptop } from 'lucide-react';
 import { NodeConfig, NodeStatus, GeminiAnalysisResult, KeySlot } from '../types';
 import { analyzeCsvData } from '../services/geminiService';
 import { NodesApi, NodeCreateRequest } from '../services/apiClient';
+import { NodeTooltip } from '../components/NodeTooltip';
+import { NodeTable } from '../components/NodeTable';
 
 export const Nodes: React.FC = () => {
   const [nodes, setNodes] = useState<NodeConfig[]>([]);
@@ -37,7 +39,7 @@ export const Nodes: React.FC = () => {
         const originalStatus = n.status;
         const mappedStatus = (n.status?.toUpperCase() as NodeStatus) || NodeStatus.PENDING;
         console.log(`Node ${n.hostname}: ${originalStatus} -> ${mappedStatus}`);
-        
+
         return {
           id: n.id.toString(),
           hostname: n.hostname,
@@ -427,87 +429,9 @@ export const Nodes: React.FC = () => {
 
   return (
     <>
-      {/* Floating Tooltip - Outside container to prevent layout shift */}
+      {/* Floating Tooltip */}
       {tooltipNode && (
-        <div
-          className="fixed z-50 bg-gray-900/95 backdrop-blur-md text-white p-4 rounded-xl shadow-2xl pointer-events-none border border-gray-700 min-w-[280px] animate-in fade-in duration-200"
-          style={{
-            top: Math.min(tooltipPos.y + 16, window.innerHeight - 200),
-            left: Math.min(tooltipPos.x + 16, window.innerWidth - 300)
-          }}
-        >
-          <div className="flex items-center justify-between border-b border-gray-700 pb-2 mb-3">
-            <span className="font-bold text-base flex items-center gap-2">
-              <Cpu className="w-4 h-4 text-blue-400" />
-              {tooltipNode.hostname}
-            </span>
-            <span className={`px-2 py-0.5 rounded-full text-[10px] uppercase font-bold tracking-wider ${tooltipNode.status === NodeStatus.ACTIVE ? 'bg-green-500/20 text-green-400' : 'bg-gray-700 text-gray-300'
-              }`}>
-              {tooltipNode.status}
-            </span>
-          </div>
-
-          <div className="space-y-2 text-sm text-gray-300 font-mono">
-            <div className="flex items-center gap-3">
-              <Hash className="w-4 h-4 text-gray-500" />
-              <span className="text-gray-500">ID:</span>
-              <span className="text-white">{tooltipNode.id}</span>
-            </div>
-            <div className="flex items-center gap-3">
-              <Network className="w-4 h-4 text-gray-500" />
-              <span className="text-gray-500">IP:</span>
-              <span className="text-white">{tooltipNode.ipAddress}</span>
-            </div>
-            <div className="flex items-center gap-3">
-              <div className="w-4" /> {/* Spacer alignment */}
-              <span className="text-gray-500">MAC:</span>
-              <span className="text-white">{tooltipNode.macAddress}</span>
-            </div>
-            {tooltipNode.ipmi && (
-              <div className="flex items-center gap-3 text-yellow-500">
-                <Laptop className="w-4 h-4" />
-                <span className="text-gray-500">IPMI:</span>
-                <span className="text-white">{tooltipNode.ipmi.ip}</span>
-              </div>
-            )}
-
-            <div className="pt-2 mt-2 border-t border-gray-700">
-              <div className="flex items-center gap-2 mb-1">
-                <Shield className="w-4 h-4 text-gray-500" />
-                <span className="text-gray-400 font-sans text-xs font-semibold uppercase">Security Profile</span>
-              </div>
-              <div className="grid grid-cols-2 gap-x-4 gap-y-1 pl-6">
-                <span className="text-gray-500">Encryption:</span>
-                <span className={tooltipNode.encryption.enabled ? "text-green-400" : "text-red-400"}>
-                  {tooltipNode.encryption.enabled ? 'Enabled' : 'Disabled'}
-                </span>
-
-                {tooltipNode.encryption.enabled && (
-                  <>
-                    <span className="text-gray-500">Method:</span>
-                    <span>{tooltipNode.encryption.luksVersion.toUpperCase()}</span>
-
-                    <span className="text-gray-500">TPM2:</span>
-                    <span className={tooltipNode.encryption.tpmEnabled ? "text-green-400" : "text-gray-500"}>
-                      {tooltipNode.encryption.tpmEnabled ? 'Active' : 'Inactive'}
-                    </span>
-
-                    <span className="text-gray-500">USB Key:</span>
-                    <span className={tooltipNode.encryption.usbKeyRequired ? "text-blue-400" : "text-gray-500"}>
-                      {tooltipNode.encryption.usbKeyRequired ? 'Required' : 'Optional'}
-                    </span>
-                  </>
-                )}
-              </div>
-            </div>
-
-            <div className="pt-2 mt-2 border-t border-gray-700 flex items-center gap-2 text-xs">
-              <Activity className="w-3 h-3 text-gray-500" />
-              <span className="text-gray-500">Last Seen:</span>
-              <span className="text-gray-300">{tooltipNode.lastSeen || 'Unknown'}</span>
-            </div>
-          </div>
-        </div>
+        <NodeTooltip node={tooltipNode} position={tooltipPos} />
       )}
 
       <div className="space-y-6 relative">
@@ -634,12 +558,12 @@ export const Nodes: React.FC = () => {
                   <div>
                     <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">Root Password</label>
                     <div className="relative">
-                      <input 
+                      <input
                         type={showRootPassword ? "text" : "password"}
-                        value={rootPassword} 
-                        onChange={e => setRootPassword(e.target.value)} 
-                        className="w-full px-3 py-2 pr-10 bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-lg text-sm dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500/20 font-mono" 
-                        placeholder="留空使用默认: changeme" 
+                        value={rootPassword}
+                        onChange={e => setRootPassword(e.target.value)}
+                        className="w-full px-3 py-2 pr-10 bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-lg text-sm dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500/20 font-mono"
+                        placeholder="留空使用默认: changeme"
                       />
                       <button type="button" onClick={() => setShowRootPassword(!showRootPassword)} className="absolute right-2 top-1/2 -translate-y-1/2 p-1 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300">
                         {showRootPassword ? <EyeOff size={16} /> : <Eye size={16} />}
@@ -873,126 +797,17 @@ export const Nodes: React.FC = () => {
           </div>
         )}
 
-        <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-2xl shadow-sm overflow-hidden">
-          <div className="overflow-x-auto">
-            <table className="w-full text-left border-collapse">
-              <thead>
-                <tr className="bg-gray-50 dark:bg-gray-900/50 border-b border-gray-100 dark:border-gray-700 text-xs uppercase text-gray-500 dark:text-gray-400 font-semibold tracking-wider">
-                  <th className="px-6 py-4">Hostname</th>
-                  <th className="px-6 py-4">Provisioning</th>
-                  <th className="px-6 py-4">Encryption</th>
-                  <th className="px-6 py-4">Status</th>
-                  <th className="px-6 py-4 text-right">Actions</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-100 dark:divide-gray-700">
-                {filteredNodes.map((node) => (
-                  <tr
-                    key={node.id}
-                    className="hover:bg-gray-50/50 dark:hover:bg-gray-700/30 transition-colors cursor-default"
-                    onMouseLeave={() => setTooltipNode(null)}
-                  >
-                    <td className="px-6 py-4" onMouseEnter={(e) => handleNodeEnter(e, node)}>
-                      <div className="font-medium text-gray-900 dark:text-white">{node.hostname}</div>
-                      <div className="text-xs text-gray-500 dark:text-gray-400">OS: {node.osType || 'unknown'} {node.osVersion ? `(${node.osVersion})` : ''}</div>
-                    </td>
-                    <td className="px-6 py-4" onMouseEnter={(e) => handleNodeEnter(e, node)}>
-                      {node.provisioningMethod === 'IPMI_BMC' ? (
-                        <div className="flex items-center gap-2 text-purple-700 dark:text-purple-400">
-                          <Laptop className="w-4 h-4" />
-                          <div>
-                            <div className="text-sm font-medium">IPMI</div>
-                            <div className="text-xs opacity-75 font-mono">
-                              {node.ipmi?.username ? `${node.ipmi.username}@` : ''}{node.ipmi?.ip || 'N/A'}
-                            </div>
-                          </div>
-                        </div>
-                      ) : (
-                        <div className="text-sm text-gray-700 dark:text-gray-300 space-y-1">
-                          <div className="font-mono text-xs">MAC: {node.macAddress || 'N/A'}</div>
-                          <div className="font-mono text-xs">IP: {node.ipAddress || 'N/A'}</div>
-                        </div>
-                      )}
-                    </td>
-                    <td className="px-6 py-4" onMouseEnter={(e) => handleNodeEnter(e, node)}>
-                      <div className="flex items-center gap-2">
-                        {node.encryption.enabled ? (
-                          <span className="inline-flex items-center gap-1 px-2 py-1 rounded-md bg-green-50 dark:bg-green-900/20 text-green-700 dark:text-green-400 text-xs font-medium border border-green-100 dark:border-green-900/30">
-                            Encrypted
-                          </span>
-                        ) : (
-                          <span className="inline-flex items-center gap-1 px-2 py-1 rounded-md bg-red-50 dark:bg-red-900/20 text-red-700 dark:text-red-400 text-xs font-medium border border-red-100 dark:border-red-900/30">
-                            Unencrypted
-                          </span>
-                        )}
-                        {node.encryption.tpmEnabled && (
-                          <span className="px-2 py-1 rounded-md bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 text-xs font-medium border border-gray-200 dark:border-gray-600">TPM2</span>
-                        )}
-                        {node.encryption.usbKeyRequired && (
-                          <span className="px-2 py-1 rounded-md bg-blue-50 dark:bg-blue-900/20 text-blue-700 dark:text-blue-400 text-xs font-medium border border-blue-100 dark:border-blue-900/30">USB</span>
-                        )}
-                        {node.encryption.pcrBinding?.length ? (
-                          <span className="px-2 py-1 rounded-md bg-amber-50 dark:bg-amber-900/20 text-amber-700 dark:text-amber-300 text-xs font-medium border border-amber-100 dark:border-amber-900/30">PCRs {node.encryption.pcrBinding.join(',')}</span>
-                        ) : null}
-                      </div>
-                    </td>
-                    <td className="px-6 py-4" onMouseEnter={(e) => handleNodeEnter(e, node)}>
-                      <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium
-                        ${node.status === NodeStatus.ACTIVE ? 'bg-green-100 dark:bg-green-900/30 text-green-800 dark:text-green-400' : ''}
-                        ${node.status === NodeStatus.REBUILDING ? 'bg-yellow-100 dark:bg-yellow-900/30 text-yellow-800 dark:text-yellow-400 animate-pulse' : ''}
-                        ${node.status === NodeStatus.PENDING ? 'bg-gray-100 dark:bg-gray-700 text-gray-800 dark:text-gray-300' : ''}
-                        ${node.status === NodeStatus.ERROR ? 'bg-red-100 dark:bg-red-900/30 text-red-800 dark:text-red-400' : ''}
-                      `}>
-                        {node.status}
-                      </span>
-                    </td>
-                    <td className="px-6 py-4 text-right flex justify-end gap-1" onMouseEnter={() => setTooltipNode(null)}>
-                      <button
-                        onClick={(e) => { e.stopPropagation(); handleEdit(node); }}
-                        className="text-gray-400 hover:text-blue-600 dark:hover:text-blue-400 transition-colors p-2"
-                        title="Edit Configuration"
-                      >
-                        <Pencil className="w-4 h-4" />
-                      </button>
-                      <button
-                        onClick={(e) => { e.stopPropagation(); rebuildNode(node); }}
-                        className="text-gray-400 hover:text-green-600 dark:hover:text-green-400 transition-colors p-2"
-                        title="Rebuild System"
-                      >
-                        <RefreshCcw className="w-4 h-4" />
-                      </button>
-                      <button
-                        onClick={(e) => { e.stopPropagation(); handleDownloadPassphrase(node); }}
-                        className="text-gray-400 hover:text-indigo-600 dark:hover:text-indigo-400 transition-colors p-2"
-                        title="Download Encryption Passphrase"
-                      >
-                        <Download className="w-4 h-4" />
-                      </button>
-                      <button
-                        onClick={(e) => { e.stopPropagation(); handleDelete(node.id); }}
-                        className="text-gray-400 hover:text-red-600 dark:hover:text-red-400 transition-colors p-2"
-                        title="Delete Node"
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </button>
-                    </td>
-                  </tr>
-                ))}
-                {filteredNodes.length === 0 && (
-                  <tr>
-                    <td colSpan={5} className="px-6 py-12 text-center text-gray-500 dark:text-gray-400">
-                      <div className="flex flex-col items-center gap-3">
-                        <HardDrive className="w-10 h-10 text-gray-300 dark:text-gray-600" />
-                        <p>No nodes found matching current filters.</p>
-                      </div>
-                    </td>
-                  </tr>
-                )}
-              </tbody>
-            </table>
-          </div>
-        </div>
+        <NodeTable
+          nodes={filteredNodes}
+          onEdit={handleEdit}
+          onRebuild={rebuildNode}
+          onDelete={handleDelete}
+          onDownloadPassphrase={handleDownloadPassphrase}
+          onNodeHover={handleNodeEnter}
+          onNodeLeave={() => setTooltipNode(null)}
+        />
       </div>
     </>
   );
 };
+
