@@ -11,6 +11,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/os-baka/backend/internal/model"
+	"golang.org/x/crypto/bcrypt"
 )
 
 type NodeHandler struct{}
@@ -30,7 +31,7 @@ func NewNodeHandler() *NodeHandler {
 // @Router       /nodes [get]
 func (h *NodeHandler) ListNodes(c *gin.Context) {
 	var nodes []model.Node
-	model.DB.Find(&nodes)
+	getDB().Find(&nodes)
 
 	// Map to frontend expectation if needed, or return raw
 	// Frontend expects: id, hostname, mac_address, ip_address, status, ...
@@ -130,6 +131,17 @@ func (h *NodeHandler) CreateNode(c *gin.Context) {
 		return
 	}
 
+	// Hash root password before storing (preseed uses the hashed form)
+	var hashedRootPassword string
+	if req.RootPassword != "" {
+		hashed, err := bcrypt.GenerateFromPassword([]byte(req.RootPassword), 10)
+		if err != nil {
+			ErrorResponse(c, http.StatusInternalServerError, "Failed to hash root password")
+			return
+		}
+		hashedRootPassword = string(hashed)
+	}
+
 	node := model.Node{
 		Hostname:             req.Hostname,
 		IPAddress:            req.IPAddress,
@@ -140,24 +152,24 @@ func (h *NodeHandler) CreateNode(c *gin.Context) {
 		OSVersion:            req.OSVersion,
 		MirrorURL:            req.MirrorURL,
 		Timezone:             req.Timezone,
-		RootPassword:         req.RootPassword,
+		RootPassword:         hashedRootPassword,
 		SSHEnabled:           req.SSHEnabled,
 		SSHRootLogin:         req.SSHRootLogin,
 		EncryptionEnabled:    req.EncryptionEnabled,
-		EncryptionPassphrase: req.EncryptionPassphrase,
+		EncryptionPassphrase: req.EncryptionPassphrase, // Kept recoverable for LUKS key recovery
 		TPMEnabled:           req.TPMEnabled,
 		USBKeyRequired:       req.USBKeyRequired,
 		PCRBinding:           req.PCRBinding,
 	}
 
-	if result := model.DB.Create(&node); result.Error != nil {
+	if result := getDB().Create(&node); result.Error != nil {
 		ErrorResponse(c, http.StatusInternalServerError, result.Error.Error())
 		return
 	}
 
 	// Sync to DHCP Reservation
 	var reservation model.DHCPReservation
-	if result := model.DB.Where("mac_address = ?", node.MACAddress).First(&reservation); result.Error != nil {
+	if result := getDB().Where("mac_address = ?", node.MACAddress).First(&reservation); result.Error != nil {
 		// Create new reservation
 		reservation = model.DHCPReservation{
 			MACAddress:  node.MACAddress,
@@ -166,12 +178,12 @@ func (h *NodeHandler) CreateNode(c *gin.Context) {
 			Description: "Auto-synced from node asset",
 			IsActive:    true,
 		}
-		model.DB.Create(&reservation)
+		getDB().Create(&reservation)
 	} else {
 		// Update existing
 		reservation.IPAddress = node.IPAddress
 		reservation.Hostname = node.Hostname
-		model.DB.Save(&reservation)
+		getDB().Save(&reservation)
 	}
 
 	// Regenerate dnsmasq config for DHCP reservations
@@ -188,7 +200,7 @@ func (h *NodeHandler) UpdateNode(c *gin.Context) {
 		return
 	}
 	var node model.Node
-	if result := model.DB.First(&node, id); result.Error != nil {
+	if result := getDB().First(&node, id); result.Error != nil {
 		ErrorResponse(c, http.StatusNotFound, "Node not found")
 		return
 	}
@@ -255,15 +267,15 @@ func (h *NodeHandler) UpdateNode(c *gin.Context) {
 		node.PCRBinding = *req.PCRBinding
 	}
 
-	model.DB.Save(&node)
+	getDB().Save(&node)
 
 	// Sync to DHCP Reservation
 	var reservation model.DHCPReservation
-	if result := model.DB.Where("mac_address = ?", node.MACAddress).First(&reservation); result.Error == nil {
+	if result := getDB().Where("mac_address = ?", node.MACAddress).First(&reservation); result.Error == nil {
 		// Update existing
 		reservation.IPAddress = node.IPAddress
 		reservation.Hostname = node.Hostname
-		model.DB.Save(&reservation)
+		getDB().Save(&reservation)
 	} else {
 		// Create if missing (user might have deleted reservation manually)
 		reservation = model.DHCPReservation{
@@ -273,7 +285,7 @@ func (h *NodeHandler) UpdateNode(c *gin.Context) {
 			Description: "Auto-synced from node asset",
 			IsActive:    true,
 		}
-		model.DB.Create(&reservation)
+		getDB().Create(&reservation)
 	}
 
 	// Regenerate dnsmasq config for DHCP reservations
@@ -290,12 +302,12 @@ func (h *NodeHandler) DeleteNode(c *gin.Context) {
 		return
 	}
 	var node model.Node
-	if result := model.DB.First(&node, id); result.Error == nil {
+	if result := getDB().First(&node, id); result.Error == nil {
 		// Delete associated DHCP reservation
-		model.DB.Where("mac_address = ?", node.MACAddress).Delete(&model.DHCPReservation{})
+		getDB().Where("mac_address = ?", node.MACAddress).Delete(&model.DHCPReservation{})
 	}
 
-	model.DB.Delete(&model.Node{}, id)
+	getDB().Delete(&model.Node{}, id)
 
 	// Regenerate dnsmasq config for DHCP reservations
 	if err := GenerateDnsmasqConfig(); err != nil {
@@ -313,7 +325,7 @@ func (h *NodeHandler) GetPassphrase(c *gin.Context) {
 		return
 	}
 	var node model.Node
-	if result := model.DB.First(&node, id); result.Error != nil {
+	if result := getDB().First(&node, id); result.Error != nil {
 		ErrorResponse(c, http.StatusNotFound, "Node not found")
 		return
 	}
@@ -350,7 +362,7 @@ func (h *NodeHandler) UpdateNodeStatus(c *gin.Context) {
 	}
 
 	var node model.Node
-	if result := model.DB.First(&node, id); result.Error != nil {
+	if result := getDB().First(&node, id); result.Error != nil {
 		ErrorResponse(c, http.StatusNotFound, "Node not found")
 		return
 	}
@@ -380,7 +392,7 @@ func (h *NodeHandler) UpdateNodeStatus(c *gin.Context) {
 
 	slog.Debug("UpdateNodeStatus", "id", node.ID, "hostname", node.Hostname, "from", node.Status, "to", req.Status)
 	node.Status = req.Status
-	model.DB.Save(&node)
+	getDB().Save(&node)
 
 	c.JSON(http.StatusOK, gin.H{
 		"success": true,
@@ -407,14 +419,14 @@ func (h *NodeHandler) RebuildNode(c *gin.Context) {
 	}
 
 	var node model.Node
-	if result := model.DB.First(&node, id); result.Error != nil {
+	if result := getDB().First(&node, id); result.Error != nil {
 		ErrorResponse(c, http.StatusNotFound, "Node not found")
 		return
 	}
 
 	// Set status to installing to trigger reinstallation
 	node.Status = "installing"
-	model.DB.Save(&node)
+	getDB().Save(&node)
 
 	c.JSON(http.StatusOK, gin.H{
 		"success": true,

@@ -47,6 +47,9 @@ export interface NodeConfig {
   osVersion?: string;
   mirrorUrl?: string;
   timezone?: string;
+  assetTag?: string;
+  sshEnabled?: boolean;
+  sshRootLogin?: boolean;
   status: NodeStatus;
   provisioningMethod: 'PXE_MAC' | 'IPMI_BMC';
   ipmi?: IpmiCredentials;

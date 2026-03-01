@@ -19,10 +19,10 @@ func (h *DashboardHandler) Summary(c *gin.Context) {
 	var nodesError int64
 	var nodesInstalling int64
 	
-	model.DB.Model(&model.Node{}).Count(&nodesTotal)
-	model.DB.Model(&model.Node{}).Where("status = ?", "active").Count(&nodesActive)
-	model.DB.Model(&model.Node{}).Where("status = ?", "error").Count(&nodesError)
-	model.DB.Model(&model.Node{}).Where("status = ?", "installing").Count(&nodesInstalling)
+	getDB().Model(&model.Node{}).Count(&nodesTotal)
+	getDB().Model(&model.Node{}).Where("status = ?", "active").Count(&nodesActive)
+	getDB().Model(&model.Node{}).Where("status = ?", "error").Count(&nodesError)
+	getDB().Model(&model.Node{}).Where("status = ?", "installing").Count(&nodesInstalling)
 	
 	// Mock deployment stats for now as we don't have a deployments table yet
 	// But in real world, this would query a Deployment table.

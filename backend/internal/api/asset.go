@@ -36,7 +36,7 @@ func NewAssetHandler() *AssetHandler {
 // @Router       /assets/boot [get]
 func (h *AssetHandler) ListAssets(c *gin.Context) {
 	var assets []model.BootAsset
-	model.DB.Find(&assets)
+	getDB().Find(&assets)
 	c.JSON(http.StatusOK, gin.H{"items": assets, "total": len(assets)})
 }
 
@@ -118,7 +118,7 @@ func (h *AssetHandler) UploadAsset(c *gin.Context) {
 		CheckSum: checksum,
 	}
 
-	if result := model.DB.Create(&asset); result.Error != nil {
+	if result := getDB().Create(&asset); result.Error != nil {
 		// Cleanup file if DB insert fails
 		os.Remove(destPath)
 		ErrorResponse(c, http.StatusInternalServerError, result.Error.Error())
@@ -144,7 +144,7 @@ func (h *AssetHandler) DeleteAsset(c *gin.Context) {
 	}
 
 	var asset model.BootAsset
-	if result := model.DB.First(&asset, id); result.Error != nil {
+	if result := getDB().First(&asset, id); result.Error != nil {
 		ErrorResponse(c, http.StatusNotFound, "Asset not found")
 		return
 	}
@@ -156,7 +156,7 @@ func (h *AssetHandler) DeleteAsset(c *gin.Context) {
 		fmt.Printf("Warning: Failed to delete file %s: %v\n", fullPath, err)
 	}
 
-	model.DB.Delete(&model.BootAsset{}, id)
+	getDB().Delete(&model.BootAsset{}, id)
 
 	c.JSON(http.StatusOK, gin.H{"success": true})
 }

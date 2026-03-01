@@ -233,8 +233,8 @@ export const DashboardApi = {
 
 export const NotificationsApi = {
   async list(): Promise<NotificationItem[]> {
-    const res = await httpClient.get<NotificationItem[]>('/notifications');
-    return res.data;
+    const res = await httpClient.get<{ items: NotificationItem[]; total: number }>('/notifications');
+    return res.data.items;
   },
 
   async markRead(id: string): Promise<void> {

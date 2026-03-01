@@ -40,6 +40,9 @@ func main() {
 	// Init DB
 	model.InitDB(cfg)
 
+	// Inject DB into API handlers
+	api.InitHandlers(model.DB)
+
 	// Regenerate dnsmasq config to ensure consistency on startup
 	if err := api.GenerateDnsmasqConfig(); err != nil {
 		slog.Warn("Startup dnsmasq config generation failed", "error", err)

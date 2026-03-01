@@ -31,6 +31,7 @@ func Load() *Config {
 	// Default values
 	cfg.Server.Port = "8000"
 	cfg.Server.Mode = "debug"
+	cfg.Server.SecretKey = "change-this-in-production"
 	cfg.Database.URL = getEnv("DATABASE_URL", "postgresql://osbaka:password@localhost:5432/osbaka")
 
 	// Try loading from config.yaml
@@ -58,9 +59,18 @@ func Load() *Config {
 		slog.Info("No config file found, using defaults/env vars")
 	}
 
-	// Override with Env vars if present (simple precedence)
+	// Override with Env vars if present (highest precedence)
 	if port := os.Getenv("PORT"); port != "" {
 		cfg.Server.Port = port
+	}
+	if secretKey := os.Getenv("SECRET_KEY"); secretKey != "" {
+		cfg.Server.SecretKey = secretKey
+	}
+	if dbURL := os.Getenv("DATABASE_URL"); dbURL != "" {
+		cfg.Database.URL = dbURL
+	}
+	if mode := os.Getenv("GIN_MODE"); mode != "" {
+		cfg.Server.Mode = mode
 	}
 
 	return cfg

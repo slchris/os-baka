@@ -40,7 +40,7 @@ func (h *AuthHandler) Login(c *gin.Context) {
 	}
 
 	var user model.User
-	if result := model.DB.Where("username = ?", req.Username).First(&user); result.Error != nil {
+	if result := getDB().Where("username = ?", req.Username).First(&user); result.Error != nil {
 		ErrorResponse(c, http.StatusUnauthorized, "Invalid credentials")
 		return
 	}
@@ -76,7 +76,7 @@ func (h *AuthHandler) Me(c *gin.Context) {
 	}
 
 	var user model.User
-	if result := model.DB.First(&user, userID); result.Error != nil {
+	if result := getDB().First(&user, userID); result.Error != nil {
 		ErrorResponse(c, http.StatusNotFound, "User not found")
 		return
 	}

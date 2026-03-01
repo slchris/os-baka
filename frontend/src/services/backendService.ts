@@ -34,6 +34,11 @@ function mapBackendUserToFrontend(backendUser: MeResponse): User {
 
 // Map backend NodeView to frontend NodeConfig
 function mapNodeViewToNodeConfig(node: NodeView): NodeConfig {
+  // Parse PCR binding from comma-separated string to number array
+  const pcrBinding = node.pcr_binding
+    ? node.pcr_binding.split(',').map(Number).filter((n) => !isNaN(n))
+    : undefined;
+
   return {
     id: String(node.id),
     hostname: node.hostname,
@@ -41,11 +46,19 @@ function mapNodeViewToNodeConfig(node: NodeView): NodeConfig {
     ipAddress: node.ip_address,
     status: mapStatus(node.status),
     provisioningMethod: 'PXE_MAC',
+    osType: node.os_type,
+    osVersion: node.os_version,
+    mirrorUrl: node.mirror_url,
+    assetTag: node.asset_tag,
+    timezone: node.timezone,
+    sshEnabled: node.ssh_enabled ?? false,
+    sshRootLogin: node.ssh_root_login ?? false,
     encryption: {
       enabled: node.encryption_enabled,
       luksVersion: 'luks2',
-      tpmEnabled: false,
-      usbKeyRequired: false,
+      tpmEnabled: node.tpm_enabled ?? false,
+      usbKeyRequired: node.usb_key_required ?? false,
+      pcrBinding,
       keySlots: [],
     },
     lastSeen: node.last_seen || formatRelativeTime(node.updated_at || node.created_at),
@@ -68,7 +81,7 @@ function formatRelativeTime(timestamp: string): string {
   const now = new Date();
   const diffMs = now.getTime() - date.getTime();
   const diffMins = Math.floor(diffMs / 60000);
-  
+
   if (diffMins < 1) return 'just now';
   if (diffMins < 60) return `${diffMins} min${diffMins > 1 ? 's' : ''} ago`;
   const diffHours = Math.floor(diffMins / 60);
@@ -249,31 +262,32 @@ export const BackendService = {
   // ==================== Pure Frontend Utilities ====================
   // These don't need backend, they generate files locally
 
-  generateDnsmasqConfig: (): Blob => {
-    const nodes = BackendService.getNodes();
-    // Note: This is now async, but we'll keep it sync for now with a warning
-    console.warn('[BackendService] generateDnsmasqConfig called synchronously - consider making async');
-    
-    const configContent = [
+  generateDnsmasqConfig: async (): Promise<Blob> => {
+    const nodes = await BackendService.getNodes();
+
+    const lines = [
       '# OS-Baka Auto-Generated Dnsmasq Config',
       `# Generated at ${new Date().toISOString()}`,
       '',
       '# DHCP Static Bindings',
-      '# Note: Run getNodes() first to ensure data is current',
-      '',
-      '# Boot Options',
-      'dhcp-option=option:router,192.168.10.1',
-      'dhcp-option=option:dns-server,8.8.8.8,8.8.4.4',
-    ].join('\n');
+    ];
 
-    return new Blob([configContent], { type: 'text/plain' });
+    for (const node of nodes) {
+      lines.push(`dhcp-host=${node.macAddress},${node.ipAddress},${node.hostname}`);
+    }
+
+    lines.push('', '# Boot Options');
+    lines.push('dhcp-option=option:router,192.168.10.1');
+    lines.push('dhcp-option=option:dns-server,8.8.8.8,8.8.4.4');
+
+    return new Blob([lines.join('\n')], { type: 'text/plain' });
   },
 
   generateLuksHeader: (hostname: string): Blob => {
     const size = 16 * 1024;
     const buffer = new Uint8Array(size);
     crypto.getRandomValues(buffer);
-    
+
     buffer[0] = 0x4c; // L
     buffer[1] = 0x55; // U
     buffer[2] = 0x4b; // K
@@ -322,7 +336,7 @@ export const BackendService = {
 
     // Update node to mark key as rotated (would need backend API)
     console.warn('[BackendService] regenerateRecoveryKey - backend integration pending');
-    
+
     return passphrase;
   },
 };

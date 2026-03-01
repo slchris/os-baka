@@ -50,7 +50,7 @@ func (h *SystemHandler) ListInterfaces(c *gin.Context) {
 // @Router       /dhcp/configs [get]
 func (h *DHCPHandler) ListConfigs(c *gin.Context) {
 	configs := []model.DHCPConfig{}
-	model.DB.Find(&configs)
+	getDB().Find(&configs)
 
 	c.JSON(http.StatusOK, gin.H{"items": configs, "total": len(configs)})
 }
@@ -70,7 +70,7 @@ func (h *DHCPHandler) GetConfig(c *gin.Context) {
 		return
 	}
 	var config model.DHCPConfig
-	if result := model.DB.First(&config, id); result.Error != nil {
+	if result := getDB().First(&config, id); result.Error != nil {
 		ErrorResponse(c, http.StatusNotFound, "Configuration not found")
 		return
 	}
@@ -87,7 +87,7 @@ func (h *DHCPHandler) GetConfig(c *gin.Context) {
 // @Router       /dhcp/config/active [get]
 func (h *DHCPHandler) GetActiveConfig(c *gin.Context) {
 	var config model.DHCPConfig
-	if result := model.DB.Where("is_active = ?", true).First(&config); result.Error != nil {
+	if result := getDB().Where("is_active = ?", true).First(&config); result.Error != nil {
 		ErrorResponse(c, http.StatusNotFound, "No active configuration found")
 		return
 	}
@@ -161,10 +161,10 @@ func (h *DHCPHandler) CreateConfig(c *gin.Context) {
 
 	// If this is marked as active, deactivate others
 	if config.IsActive {
-		model.DB.Model(&model.DHCPConfig{}).Where("is_active = ?", true).Update("is_active", false)
+		getDB().Model(&model.DHCPConfig{}).Where("is_active = ?", true).Update("is_active", false)
 	}
 
-	if result := model.DB.Create(&config); result.Error != nil {
+	if result := getDB().Create(&config); result.Error != nil {
 		ErrorResponse(c, http.StatusInternalServerError, result.Error.Error())
 		return
 	}
@@ -190,7 +190,7 @@ func (h *DHCPHandler) UpdateConfig(c *gin.Context) {
 		return
 	}
 	var config model.DHCPConfig
-	if result := model.DB.First(&config, id); result.Error != nil {
+	if result := getDB().First(&config, id); result.Error != nil {
 		ErrorResponse(c, http.StatusNotFound, "Configuration not found")
 		return
 	}
@@ -220,7 +220,7 @@ func (h *DHCPHandler) UpdateConfig(c *gin.Context) {
 
 	// If this is marked as active, deactivate others
 	if req.IsActive && !config.IsActive {
-		model.DB.Model(&model.DHCPConfig{}).Where("is_active = ? AND id != ?", true, id).Update("is_active", false)
+		getDB().Model(&model.DHCPConfig{}).Where("is_active = ? AND id != ?", true, id).Update("is_active", false)
 	}
 
 	config.Name = req.Name
@@ -239,7 +239,7 @@ func (h *DHCPHandler) UpdateConfig(c *gin.Context) {
 	config.IsActive = req.IsActive
 	config.EnablePXE = req.EnablePXE
 
-	model.DB.Save(&config)
+	getDB().Save(&config)
 
 	// Regenerate dnsmasq config
 	GenerateDnsmasqConfig()
@@ -263,12 +263,12 @@ func (h *DHCPHandler) DeleteConfig(c *gin.Context) {
 	}
 
 	var config model.DHCPConfig
-	if result := model.DB.First(&config, id); result.Error != nil {
+	if result := getDB().First(&config, id); result.Error != nil {
 		ErrorResponse(c, http.StatusNotFound, "Configuration not found")
 		return
 	}
 
-	model.DB.Delete(&model.DHCPConfig{}, id)
+	getDB().Delete(&model.DHCPConfig{}, id)
 
 	message := "Configuration deleted"
 	if config.IsActive {
@@ -306,7 +306,7 @@ func (h *DHCPHandler) RestartService(c *gin.Context) {
 // @Router       /dhcp/reservations [get]
 func (h *DHCPHandler) ListReservations(c *gin.Context) {
 	reservations := []model.DHCPReservation{}
-	model.DB.Find(&reservations)
+	getDB().Find(&reservations)
 
 	c.JSON(http.StatusOK, gin.H{"items": reservations, "total": len(reservations)})
 }
@@ -341,7 +341,7 @@ func (h *DHCPHandler) CreateReservation(c *gin.Context) {
 		IsActive:    req.IsActive,
 	}
 
-	if result := model.DB.Create(&reservation); result.Error != nil {
+	if result := getDB().Create(&reservation); result.Error != nil {
 		ErrorResponse(c, http.StatusInternalServerError, result.Error.Error())
 		return
 	}
@@ -367,7 +367,7 @@ func (h *DHCPHandler) UpdateReservation(c *gin.Context) {
 		return
 	}
 	var reservation model.DHCPReservation
-	if result := model.DB.First(&reservation, id); result.Error != nil {
+	if result := getDB().First(&reservation, id); result.Error != nil {
 		ErrorResponse(c, http.StatusNotFound, "Reservation not found")
 		return
 	}
@@ -391,7 +391,7 @@ func (h *DHCPHandler) UpdateReservation(c *gin.Context) {
 	reservation.Description = req.Description
 	reservation.IsActive = req.IsActive
 
-	model.DB.Save(&reservation)
+	getDB().Save(&reservation)
 
 	// Regenerate dnsmasq config
 	GenerateDnsmasqConfig()
@@ -413,7 +413,7 @@ func (h *DHCPHandler) DeleteReservation(c *gin.Context) {
 	if !ok {
 		return
 	}
-	model.DB.Delete(&model.DHCPReservation{}, id)
+	getDB().Delete(&model.DHCPReservation{}, id)
 
 	// Regenerate dnsmasq config
 	GenerateDnsmasqConfig()
@@ -431,7 +431,7 @@ func (h *DHCPHandler) DeleteReservation(c *gin.Context) {
 // @Router       /dhcp/reservations/sync [post]
 func (h *DHCPHandler) SyncFromNodes(c *gin.Context) {
 	var nodes []model.Node
-	model.DB.Find(&nodes)
+	getDB().Find(&nodes)
 
 	created := 0
 	updated := 0
@@ -442,7 +442,7 @@ func (h *DHCPHandler) SyncFromNodes(c *gin.Context) {
 		}
 
 		var existing model.DHCPReservation
-		result := model.DB.Where("mac_address = ?", node.MACAddress).First(&existing)
+		result := getDB().Where("mac_address = ?", node.MACAddress).First(&existing)
 
 		if result.Error != nil {
 			// Create new reservation
@@ -453,13 +453,13 @@ func (h *DHCPHandler) SyncFromNodes(c *gin.Context) {
 				Description: "Auto-synced from node",
 				IsActive:    true,
 			}
-			model.DB.Create(&reservation)
+			getDB().Create(&reservation)
 			created++
 		} else {
 			// Update existing
 			existing.IPAddress = node.IPAddress
 			existing.Hostname = node.Hostname
-			model.DB.Save(&existing)
+			getDB().Save(&existing)
 			updated++
 		}
 	}

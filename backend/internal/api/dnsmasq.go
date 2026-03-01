@@ -30,7 +30,7 @@ func GenerateDnsmasqConfig() error {
 // generateMainConfig generates the main dnsmasq configuration from DB
 func generateMainConfig() error {
 	var config model.DHCPConfig
-	result := model.DB.Where("is_active = ?", true).First(&config)
+	result := getDB().Where("is_active = ?", true).First(&config)
 	if result.Error != nil {
 		// No active config, use defaults
 		return nil
@@ -170,7 +170,7 @@ func generateHostsConfig() error {
 	
 	// Get active DHCP reservations
 	var reservations []model.DHCPReservation
-	model.DB.Where("is_active = ?", true).Find(&reservations)
+	getDB().Where("is_active = ?", true).Find(&reservations)
 	
 	if len(reservations) > 0 {
 		content.WriteString("# Explicit DHCP Reservations\n")
@@ -191,7 +191,7 @@ func generateHostsConfig() error {
 	
 	// Get nodes that don't have explicit reservations
 	var nodes []model.Node
-	model.DB.Find(&nodes)
+	getDB().Find(&nodes)
 	
 	// Create a map of existing reservations
 	reservedMACs := make(map[string]bool)

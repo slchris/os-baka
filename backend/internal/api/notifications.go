@@ -16,7 +16,7 @@ func NewNotificationHandler() *NotificationHandler {
 
 func (h *NotificationHandler) List(c *gin.Context) {
 	var notifications []model.Notification
-	model.DB.Order("created_at desc").Find(&notifications)
+	getDB().Order("created_at desc").Find(&notifications)
 
 	type NotificationView struct {
 		ID        uint   `json:"id"`
@@ -44,7 +44,7 @@ func (h *NotificationHandler) List(c *gin.Context) {
 		response = []NotificationView{}
 	}
 
-	c.JSON(http.StatusOK, response)
+	c.JSON(http.StatusOK, gin.H{"items": response, "total": len(response)})
 }
 
 func (h *NotificationHandler) MarkRead(c *gin.Context) {
@@ -54,13 +54,13 @@ func (h *NotificationHandler) MarkRead(c *gin.Context) {
 	}
 
 	var notification model.Notification
-	if result := model.DB.First(&notification, id); result.Error != nil {
+	if result := getDB().First(&notification, id); result.Error != nil {
 		ErrorResponse(c, http.StatusNotFound, "Notification not found")
 		return
 	}
 
 	notification.Read = true
-	model.DB.Save(&notification)
+	getDB().Save(&notification)
 
 	c.JSON(http.StatusOK, gin.H{"success": true})
 }

@@ -12,6 +12,13 @@ import (
 	"github.com/os-baka/backend/internal/sysutil"
 )
 
+// PXEHandler handles PXE boot script generation and provisioning endpoints.
+//
+// SECURITY NOTE: PXE/preseed/kickstart scripts transmit sensitive data
+// (root passwords, LUKS passphrases) over HTTP. In production environments:
+//   - Use a dedicated, isolated provisioning VLAN
+//   - Consider placing the backend behind an HTTPS reverse proxy
+//   - Restrict PXE endpoint access to the provisioning network only
 type PXEHandler struct{}
 
 func NewPXEHandler() *PXEHandler {
@@ -91,7 +98,7 @@ func getPublicServerIP(c *gin.Context) string {
 
 	// 2. Database Config
 	var config model.DHCPConfig
-	if result := model.DB.Where("is_active = ?", true).First(&config); result.Error == nil {
+	if result := getDB().Where("is_active = ?", true).First(&config); result.Error == nil {
 		if config.BootServerIP != "" {
 			return config.BootServerIP
 		}
@@ -159,7 +166,7 @@ func (h *PXEHandler) BootScript(c *gin.Context) {
 	menuForced := c.Query("menu") == "1" || strings.EqualFold(os.Getenv("PXE_MENU_ENABLED"), "1")
 
 	var node model.Node
-	nodeFound := model.DB.Where("LOWER(mac_address) = ?", mac).First(&node).Error == nil
+	nodeFound := getDB().Where("LOWER(mac_address) = ?", mac).First(&node).Error == nil
 
 	// If menu is forced or node not found, render a lightweight test menu to avoid blank screen during troubleshooting
 	if menuForced || !nodeFound {
@@ -188,7 +195,7 @@ func (h *PXEHandler) BootScript(c *gin.Context) {
 	var extraArgs string
 	var mirrorURL string
 
-	if result := model.DB.Where("is_active = ?", true).First(&config); result.Error == nil {
+	if result := getDB().Where("is_active = ?", true).First(&config); result.Error == nil {
 		extraArgs = " " + config.KernelParams
 		mirrorURL = config.MirrorURL
 	}
@@ -281,7 +288,7 @@ func (h *PXEHandler) Preseed(c *gin.Context) {
 	mac := normalizeMac(c.Param("mac"))
 
 	var node model.Node
-	if result := model.DB.Where("LOWER(mac_address) = ?", mac).First(&node); result.Error != nil {
+	if result := getDB().Where("LOWER(mac_address) = ?", mac).First(&node); result.Error != nil {
 		c.String(http.StatusNotFound, "# Node not found")
 		return
 	}
@@ -292,7 +299,7 @@ func (h *PXEHandler) Preseed(c *gin.Context) {
 
 	// Determine Mirror Config (node > env > DB > defaults)
 	var config model.DHCPConfig
-	_ = model.DB.Where("is_active = ?", true).First(&config)
+	_ = getDB().Where("is_active = ?", true).First(&config)
 	baseMirror := resolveMirror(node.OSType, node.MirrorURL, config.MirrorURL)
 	mirrorHost := ""
 	mirrorDir := "/"
@@ -523,7 +530,7 @@ func (h *PXEHandler) Kickstart(c *gin.Context) {
 	mac := normalizeMac(c.Param("mac"))
 
 	var node model.Node
-	if result := model.DB.Where("LOWER(mac_address) = ?", mac).First(&node); result.Error != nil {
+	if result := getDB().Where("LOWER(mac_address) = ?", mac).First(&node); result.Error != nil {
 		c.String(http.StatusNotFound, "# Node not found")
 		return
 	}
@@ -534,7 +541,7 @@ func (h *PXEHandler) Kickstart(c *gin.Context) {
 
 	// Determine Mirror Config (env > DB > default)
 	var config model.DHCPConfig
-	_ = model.DB.Where("is_active = ?", true).First(&config)
+	_ = getDB().Where("is_active = ?", true).First(&config)
 	baseMirror := resolveMirror(node.OSType, node.MirrorURL, config.MirrorURL)
 	centosBase := fmt.Sprintf("%s/9-stream/BaseOS/x86_64/os/", strings.TrimRight(baseMirror, "/"))
 
@@ -619,7 +626,7 @@ func (h *PXEHandler) PostInstall(c *gin.Context) {
 	mac := normalizeMac(c.Param("mac"))
 
 	var node model.Node
-	if result := model.DB.Where("LOWER(mac_address) = ?", mac).First(&node); result.Error != nil {
+	if result := getDB().Where("LOWER(mac_address) = ?", mac).First(&node); result.Error != nil {
 		c.String(http.StatusNotFound, "# Node not found")
 		return
 	}
