@@ -1,0 +1,22 @@
+#!ipxe
+# OS-Baka iPXE chainloader
+
+echo OS-Baka PXE chainloading...
+
+# Make sure at least one NIC is up and has a lease
+dhcp || goto failed
+
+# Try to discover the reachable backend host
+set server ${next-server}
+isset ${server} || set server ${dhcp-server}
+isset ${server} || set server ${net0/gateway}
+isset ${server} || goto failed
+
+# Delegate logic (menu, OS choice, encryption flags) to backend API that reads DB + EXTERNAL_IP
+echo Chaining to backend at ${server}
+chain http://${server}/pxe/init || goto failed
+
+:failed
+echo Failed to fetch init script from ${server}
+prompt --key 0x6c --timeout 5000 Press L for local disk, or wait for shell... && sanboot --no-describe --drive 0x80
+shell

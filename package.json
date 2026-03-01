@@ -1,1 +1,18 @@
-{}
+{
+  "name": "os-baka",
+  "version": "0.1.0",
+  "description": "OS-Baka - Secure PXE Boot & Asset Management System",
+  "private": true,
+  "scripts": {
+    "dev:frontend": "cd frontend && npm install && npm run dev",
+    "dev:backend": "cd backend && uvicorn app.main:app --reload",
+    "build:frontend": "cd frontend && npm install && npm run build",
+    "docker:up": "cd docker && docker-compose up -d",
+    "docker:down": "cd docker && docker-compose down",
+    "docker:logs": "cd docker && docker-compose logs -f"
+  },
+  "workspaces": [
+    "frontend",
+    "backend"
+  ]
+}

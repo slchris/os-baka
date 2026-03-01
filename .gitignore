@@ -1,1 +1,79 @@
+# Temporary files
 tmp/
+*.tmp
+*.log
+*.swp
+*.swo
+*~
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+ENV/
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Node
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+
+# Frontend build
+frontend/dist/
+frontend/.env.local
+frontend/.env.production
+
+# Backend
+backend/*.db
+backend/alembic/versions/*.pyc
+backend/server
+*.sqlite3
+*.db
+
+# IDE
+.vscode/
+.idea/
+*.sublime-project
+*.sublime-workspace
+.DS_Store
+
+# Docker
+.dockerignore
+
+# Environment
+.env
+.env.local
+.env.production
+.env.*.local
+
+# Backup
+*.bak
+*-legacy/
+*.backup
+
+# OS
+.DS_Store
+Thumbs.db

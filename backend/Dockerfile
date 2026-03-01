@@ -1,21 +1,31 @@
-FROM python:3.11-slim
+# Build Stage
+FROM hub.infra.plz.ac/library/golang:1.24-alpine AS builder
 
 WORKDIR /app
 
-# Install system dependencies
-RUN apt-get update && apt-get install -y \
-    postgresql-client \
-    && rm -rf /var/lib/apt/lists/*
+COPY go.mod go.sum ./
+RUN go mod download
 
-# Copy requirements and install Python dependencies
-COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
-
-# Copy application code
 COPY . .
 
-# Expose port
+RUN go build -o main ./cmd/server
+
+# Run Stage
+FROM hub.infra.plz.ac/library/alpine:latest
+
+RUN apk add --no-cache ca-certificates tzdata
+
+WORKDIR /app
+
+# Copy the binary
+COPY --from=builder /app/main .
+
+# Copy default config (will be overridden by env vars in production)
+COPY --from=builder /app/config.yaml ./config.yaml
+
+# Create directories for dnsmasq config and PXE assets
+RUN mkdir -p /etc/dnsmasq.d /tftpboot
+
 EXPOSE 8000
 
-# Run the application
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+CMD ["./main"]

@@ -1,0 +1,25 @@
+# OS Baka Unified Configuration
+
+# Server Configuration
+server:
+  port: "8000"
+  mode: "debug" # debug or release
+  secret_key: "change-this-in-production"
+
+# Database Configuration
+database:
+  url: "postgresql://osbaka:password@db:5432/osbaka"
+  max_idle_conns: 10
+  max_open_conns: 100
+
+# Redis Configuration
+redis:
+  url: "redis://redis:6379/0"
+
+# CORS Configuration
+cors:
+  allowed_origins:
+    - "http://localhost:3000"
+    - "http://localhost:5173"
+    - "http://127.0.0.1:3000"
+    - "http://127.0.0.1:5173"

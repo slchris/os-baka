@@ -1,0 +1,76 @@
+# Production deployment — copy .env.example to .env and configure before running
+services:
+  # PostgreSQL Database
+  db:
+    image: hub.infra.plz.ac/library/postgres:15-alpine
+    container_name: osbaka-db
+    restart: always
+    environment:
+      POSTGRES_DB: osbaka
+      POSTGRES_USER: osbaka
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-changeme}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: [ "CMD-SHELL", "pg_isready -U osbaka" ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Backend API
+  backend:
+    build:
+      context: ../backend
+      dockerfile: Dockerfile
+    image: osbaka-backend:latest
+    container_name: osbaka-backend
+    restart: always
+    environment:
+      DATABASE_URL: postgresql://osbaka:${POSTGRES_PASSWORD:-changeme}@db:5432/osbaka
+      SECRET_KEY: ${SECRET_KEY:?Set SECRET_KEY in .env file}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-admin}
+      BACKEND_URL: http://backend:8000
+      EXTERNAL_IP: ${EXTERNAL_IP:-10.31.0.3}
+    volumes:
+      - dnsmasq_config:/etc/dnsmasq.d
+      - pxe_assets:/tftpboot
+    depends_on:
+      db:
+        condition: service_healthy
+
+  # PXE Service (DHCP + TFTP)
+  pxe:
+    build:
+      context: ../pxe-services
+      dockerfile: Dockerfile
+    image: osbaka-pxe:latest
+    container_name: osbaka-pxe
+    restart: always
+    network_mode: host # Required for DHCP to work properly
+    cap_add:
+      - NET_ADMIN
+    volumes:
+      - dnsmasq_config:/etc/dnsmasq.d
+      - pxe_assets:/tftpboot
+    depends_on:
+      - backend
+
+  # Frontend (Nginx)
+  frontend:
+    build:
+      context: ../frontend
+      dockerfile: Dockerfile
+      args:
+        VITE_API_URL: /api/v1
+    image: osbaka-frontend:latest
+    container_name: osbaka-frontend
+    restart: always
+    ports:
+      - "80:80"
+    depends_on:
+      - backend
+
+volumes:
+  postgres_data:
+  dnsmasq_config:
+  pxe_assets:

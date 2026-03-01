@@ -1,198 +1,100 @@
-# OS Baka
+# OS-Baka
 
-<div align="center">
-
-🚀 **PXE 服务与物理资产管理系统**
-
-具有 Apple 风格 UI 的现代化 PXE 网络启动服务和物理资产管理平台
-
-[文档](./docs/) · [开发计划](./docs/development-plan.md) · [设计系统](./docs/design-system.md)
-
-</div>
-
----
-
-## ✨ 特性
-
-- 🎨 **Apple 风格 UI** - 基于 Apple App Store 设计系统
-- 📦 **资产管理** - IP、MAC、资产标签、USB Key 统一管理
-- 🖥️ **PXE 服务** - 支持 macOS、Linux、Windows 网络启动
-- 🔒 **自动加密** - FileVault、BitLocker、LUKS 自动配置
-- 🚀 **节点管理** - 远程重建、电源管理、批量操作
-- 🐳 **容器化部署** - 支持 Docker 和 Kubernetes
-- 💻 **Web Shell** - 基于 WebSocket 的远程终端
-- 🔑 **SSH 密钥管理** - 密钥生成、分发、轮换
-
-## 🏗️ 技术栈
-
-### 后端
-- **FastAPI** - 现代化 Python Web 框架
-- **PostgreSQL** - 关系型数据库
-- **SQLAlchemy** - ORM
-- **Celery** - 异步任务队列
-- **Redis** - 缓存和消息队列
-
-### 前端
-- **Svelte** - 轻量级响应式框架
-- **TypeScript** - 类型安全
-- **Vite** - 快速构建工具
-- **SCSS** - CSS 预处理器
-- **Axios** - HTTP 客户端
-
-### 基础设施
-- **Docker** - 容器化
-- **Nginx** - 反向代理
-- **dnsmasq** - DHCP + TFTP 服务
+一个现代化的 PXE 启动和资产管理系统，提供安全的操作系统部署、加密管理和节点监控功能。
 
 ## 🚀 快速开始
 
-### 使用 Docker Compose（推荐）
+### 方式一：Docker Compose（推荐）
 
 ```bash
-# 克隆项目
-git clone https://github.com/yourusername/os-baka.git
-cd os-baka
-
-# 启动所有服务
 cd docker
 docker-compose up -d
-
-# 查看日志
-docker-compose logs -f
 ```
 
-访问：
-- 前端: http://localhost:5173
-- 后端 API: http://localhost:8000
-- API 文档: http://localhost:8000/api/docs
+访问地址：
+- **前端 UI**: http://localhost:3000
+- **后端 API**: http://localhost:8000
+- **API 文档**: http://localhost:8000/api/v1/docs/index.html
 
-### 本地开发
+### 方式二：本地开发
 
-#### 1. 后端
-
+**终端 1 - 启动后端**:
 ```bash
 cd backend
-
-# 创建虚拟环境
-python3 -m venv venv
-source venv/bin/activate  # Windows: venv\Scripts\activate
-
-# 安装依赖
-pip install -r requirements.txt
-
-# 配置环境变量
-cp .env.example .env
-# 编辑 .env 文件配置数据库等信息
-
-# 运行数据库迁移
-alembic upgrade head
-
-# 启动开发服务器
-uvicorn app.main:app --reload
+go mod download
+go run ./cmd/server
 ```
 
-#### 2. 前端
-
+**终端 2 - 启动前端**:
 ```bash
 cd frontend
-
-# 安装依赖
 npm install
-
-# 启动开发服务器
 npm run dev
 ```
 
-#### 3. 数据库
+> 后端默认连接 PostgreSQL (`postgresql://osbaka:password@localhost:5432/osbaka`)，
+> 请确保本地有 PostgreSQL 实例或通过 Docker 启动数据库：
+> ```bash
+> cd docker && docker-compose up -d db
+> ```
 
-```bash
-# 使用 Docker 启动 PostgreSQL
-docker run -d \
-  --name osbaka-db \
-  -e POSTGRES_DB=osbaka \
-  -e POSTGRES_USER=osbaka \
-  -e POSTGRES_PASSWORD=password \
-  -p 5432:5432 \
-  postgres:15-alpine
-```
-
-## 📚 文档
-
-- [开发计划](./docs/development-plan.md)
-- [设计系统](./docs/design-system.md)
-- [API 文档](http://localhost:8000/api/docs) (运行后访问)
-
-## 🗂️ 项目结构
+## 📁 项目结构
 
 ```
 os-baka/
-├── backend/              # FastAPI 后端
-│   ├── app/
-│   │   ├── api/         # API 路由
-│   │   ├── core/        # 核心配置
-│   │   ├── models/      # 数据模型
-│   │   └── schemas/     # Pydantic Schema
-│   ├── alembic/         # 数据库迁移
-│   └── requirements.txt
-├── frontend/            # Svelte 前端
-│   ├── src/
-│   │   ├── components/  # UI 组件
-│   │   ├── pages/       # 页面
-│   │   ├── lib/         # 工具库
-│   │   └── styles/      # 样式文件
-│   └── package.json
-├── docker/              # Docker 配置
-│   └── docker-compose.yml
-├── pxe-services/        # PXE 服务配置
-├── k8s/                 # Kubernetes 配置
-└── docs/                # 文档
+├── frontend/         # React + TypeScript + Vite 前端
+├── backend/          # Go (Gin + GORM + PostgreSQL) 后端
+│   ├── cmd/server/   # 应用入口
+│   ├── internal/
+│   │   ├── api/      # HTTP Handler 层
+│   │   ├── config/   # 配置加载
+│   │   ├── model/    # 数据模型 & 数据库初始化
+│   │   └── sysutil/  # 系统工具
+│   └── docs/         # Swagger 自动生成文档
+├── docker/           # Docker Compose 配置
+├── pxe-services/     # PXE 服务 (dnsmasq + TFTP + iPXE)
+├── scripts/          # 部署脚本
+└── config.yaml       # 统一配置文件
 ```
 
-## 🛠️ 开发进度
+## 🛠️ 技术栈
 
-- [x] 项目初始化
-- [x] 后端基础框架
-- [x] 前端基础框架
-- [x] 资产管理 API
-- [x) 资产管理 UI
-- [x] 用户认证系统
-- [ ] PXE 服务实现
-- [ ] 加密安装功能
-- [ ] 节点管理功能
-- [ ] Web Shell
-- [ ] SSH 密钥管理
-- [ ] Kubernetes 支持
+- **前端**: React 19 + TypeScript + Vite + Tailwind CSS v4 + React Router v7
+- **后端**: Go 1.24 + Gin + GORM + PostgreSQL
+- **PXE**: dnsmasq (DHCP/TFTP) + iPXE chainloading
+- **部署**: Docker + Docker Compose
 
-## 📝 API 示例
+## 🔑 默认登录
 
-### 创建资产
+- **用户名**: `admin`
+- **密码**: `admin`
 
-```bash
-curl -X POST http://localhost:8000/api/v1/assets \
-  -H "Content-Type: application/json" \
-  -d '{
-    "hostname": "macbook-pro-01",
-    "ip_address": "192.168.1.100",
-    "mac_address": "00:11:22:33:44:55",
-    "asset_tag": "AST-001",
-    "os_type": "macos",
-    "encryption_enabled": true
-  }'
-```
+> ⚠️ **注意**：请在生产环境通过 `ADMIN_PASSWORD` 环境变量设置管理员密码。
 
-### 列出所有资产
+## ✨ 主要功能
 
-```bash
-curl http://localhost:8000/api/v1/assets
-```
+- ✅ 节点/资产管理
+- ✅ PXE 启动服务配置（BIOS + UEFI）
+- ✅ DHCP 配置管理 & 静态地址保留
+- ✅ 加密管理（LUKS + TPM2）
+- ✅ 自动化系统安装（Ubuntu/Debian Preseed, CentOS/RHEL Kickstart）
+- ✅ 实时仪表盘监控
+- ✅ 暗色/亮色主题切换
+- ✅ Swagger API 文档
 
-## 🙏 致谢
+## 📝 API 文档
 
-- UI 设计灵感来自 [Apple App Store](https://apps.apple.com)
-- 图标来自 [SF Symbols](https://developer.apple.com/sf-symbols/)
+启动后端后，访问 Swagger UI：
+- http://localhost:8000/api/v1/docs/index.html
 
----
+## 🔧 配置
 
-<div align="center">
-Made with ❤️ by the OS Baka Team
-</div>
+主要配置文件为 `config.yaml`，也支持环境变量覆盖：
+
+| 环境变量 | 说明 | 默认值 |
+|----------|------|--------|
+| `DATABASE_URL` | PostgreSQL 连接串 | `postgresql://osbaka:password@localhost:5432/osbaka` |
+| `PORT` | 后端监听端口 | `8000` |
+| `ADMIN_PASSWORD` | 管理员初始密码 | `admin` |
+| `EXTERNAL_IP` | PXE 服务对外 IP | 自动检测 |
+| `VITE_API_URL` | 前端 API 地址 | `http://localhost:8000/api/v1` |

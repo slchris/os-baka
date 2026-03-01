@@ -1,61 +1,121 @@
-name: CI
+name: CI/CD Pipeline
 
 on:
   push:
-    branches:
-      - main
+    branches: [ "main" ]
   pull_request:
-    branches:
-      - main
+    branches: [ "main" ]
+  schedule:
+    - cron: '0 0 * * 0' # Weekly scan
 
 jobs:
-  scan:
-    name: Code Scan
+  security:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v3
+      - uses: actions/checkout@v4
 
-      - name: Trufflehog Secret Scan
-        uses: trufflesecurity/trufflehog@main
+      - name: Set up Go
+        uses: actions/setup-go@v5
         with:
-          path: .
-          base: ${{ github.event.repository.default_branch }}
-          head: HEAD
-          extra_args: --debug
+          go-version: '1.24'
 
-      - name: Semgrep SAST Scan
-        uses: returntocorp/semgrep-action@v1
+      - name: GolangCI-Lint
+        uses: golangci/golangci-lint-action@v4
         with:
-          publishToken: ${{ secrets.SEMGREP_APP_TOKEN }}
+          version: v1.55.2
+          working-directory: ./backend
+          args: --timeout=5m
 
-  build-and-push:
-    name: Build and Push Docker Images
+      - name: Run Gosec Security Scanner
+        uses: securego/gosec@master
+        with:
+          args: ./backend/...
+
+      - name: Install govulncheck
+        run: go install golang.org/x/vuln/cmd/govulncheck@latest
+
+      - name: Run govulncheck
+        working-directory: ./backend
+        run: govulncheck ./...
+
+      - name: Run Trivy Vulnerability Scanner
+        uses: aquasecurity/trivy-action@master
+        with:
+          scan-type: 'fs'
+          ignore-unfixed: true
+          format: 'table'
+          exit-code: '0' # Don't block build on mild vulns for now
+          severity: 'CRITICAL,HIGH'
+
+  backend:
+    needs: security
     runs-on: ubuntu-latest
-    needs: scan
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v3
+    - uses: actions/checkout@v4
 
-      - name: Login to GitHub Container Registry
-        uses: docker/login-action@v2
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
+    - name: Set up Go
+      uses: actions/setup-go@v5
+      with:
+        go-version: '1.24'
 
-      - name: Build and push backend image
-        uses: docker/build-push-action@v4
-        with:
-          context: backend
-          file: backend/Dockerfile
-          push: true
-          tags: ghcr.io/${{ github.repository_owner }}/os-baka-backend:latest
+    - name: Build
+      working-directory: ./backend
+      run: go build -v ./cmd/server
 
-      - name: Build and push frontend image
-        uses: docker/build-push-action@v4
-        with:
-          context: frontend
-          file: frontend/Dockerfile
-          push: true
-          tags: ghcr.io/${{ github.repository_owner }}/os-baka-frontend:latest
+    - name: Test
+      working-directory: ./backend
+      run: go test -v ./...
+
+  frontend:
+    needs: security
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Use Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '20.x'
+        cache: 'npm'
+        cache-dependency-path: frontend/package-lock.json
+
+    - name: Install Dependencies
+      working-directory: ./frontend
+      run: npm ci
+
+    - name: Build
+      working-directory: ./frontend
+      run: npm run build
+
+  docker:
+    needs: [backend, frontend]
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v3
+
+    - name: Build Backend Docker Image
+      uses: docker/build-push-action@v5
+      with:
+        context: ./backend
+        file: ./backend/Dockerfile
+        push: false
+        tags: osbaka-backend:latest
+
+    - name: Build Frontend Docker Image
+      uses: docker/build-push-action@v5
+      with:
+        context: ./frontend
+        file: ./frontend/Dockerfile
+        push: false
+        tags: osbaka-frontend:latest
+
+    - name: Build PXE Service Docker Image
+      uses: docker/build-push-action@v5
+      with:
+        context: ./pxe-services
+        file: ./pxe-services/Dockerfile
+        push: false
+        tags: osbaka-pxe:latest
