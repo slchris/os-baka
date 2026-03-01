@@ -23,3 +23,13 @@ cors:
     - "http://localhost:5173"
     - "http://127.0.0.1:3000"
     - "http://127.0.0.1:5173"
+
+# HashiCorp Vault Configuration (for LUKS passphrase storage)
+# Enable Vault to avoid storing encryption passphrases as plaintext in the database.
+# Env vars: VAULT_ENABLED=true VAULT_ADDR=http://vault:8200 VAULT_TOKEN=<token>
+vault:
+  enabled: false
+  address: "http://vault:8200"
+  # token: "" # Set via VAULT_TOKEN env var in production
+  mount_path: "secret"     # KV v2 secrets engine mount
+  path_prefix: "osbaka/nodes"  # Vault path prefix for node secrets

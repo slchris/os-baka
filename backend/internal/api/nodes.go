@@ -167,6 +167,19 @@ func (h *NodeHandler) CreateNode(c *gin.Context) {
 		return
 	}
 
+	// Store passphrase in Vault if encryption is enabled
+	if node.EncryptionEnabled && req.EncryptionPassphrase != "" {
+		if store := getSecretStore(); store != nil && store.Type() == "vault" {
+			if err := store.StorePassphrase(c.Request.Context(), node.ID, req.EncryptionPassphrase); err != nil {
+				slog.Error("Failed to store passphrase in Vault, kept in DB as fallback",
+					"nodeID", node.ID, "error", err)
+			} else {
+				// Clear passphrase from DB since it's now in Vault
+				getDB().Model(&node).Update("encryption_passphrase", "vault:managed")
+			}
+		}
+	}
+
 	// Sync to DHCP Reservation
 	var reservation model.DHCPReservation
 	if result := getDB().Where("mac_address = ?", node.MACAddress).First(&reservation); result.Error != nil {
@@ -335,12 +348,23 @@ func (h *NodeHandler) GetPassphrase(c *gin.Context) {
 		return
 	}
 
-	if node.EncryptionPassphrase == "" {
+	// Try Vault first
+	if store := getSecretStore(); store != nil && store.Type() == "vault" {
+		passphrase, err := store.GetPassphrase(c.Request.Context(), node.ID)
+		if err == nil {
+			c.JSON(http.StatusOK, gin.H{"passphrase": passphrase, "source": "vault"})
+			return
+		}
+		slog.Warn("Failed to get passphrase from Vault, trying DB", "nodeID", node.ID, "error", err)
+	}
+
+	// Fallback to DB
+	if node.EncryptionPassphrase == "" || node.EncryptionPassphrase == "vault:managed" {
 		ErrorResponse(c, http.StatusNotFound, "No passphrase stored for this node")
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{"passphrase": node.EncryptionPassphrase})
+	c.JSON(http.StatusOK, gin.H{"passphrase": node.EncryptionPassphrase, "source": "database"})
 }
 
 // UpdateNodeStatus updates only the status field of a node.

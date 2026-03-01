@@ -1,24 +1,24 @@
-import { GoogleGenAI, Type } from "@google/genai";
+// Gemini AI Service — dynamically loaded to avoid bundling @google/genai
+// when the feature is not used (no API key configured).
 
-const getAiClient = () => {
-  const apiKey = import.meta.env.VITE_GEMINI_API_KEY || '';
-  // We handle the missing key gracefully in the UI, assuming environment variable is set for production
-  return new GoogleGenAI({ apiKey });
-};
+import { GeminiAnalysisResult } from '../types';
 
-export const analyzeCsvData = async (csvContent: string) => {
+export const analyzeCsvData = async (csvContent: string): Promise<GeminiAnalysisResult> => {
   if (!import.meta.env.VITE_GEMINI_API_KEY) {
     console.warn("API Key missing, skipping AI analysis");
     return {
-      suggestions: ["API Key not configured. Connect Gemini to analyze network conflicts."],
+      suggestions: ["API Key not configured. Set VITE_GEMINI_API_KEY to enable AI analysis."],
       risks: [],
       isValid: true
     };
   }
 
-  const ai = getAiClient();
-
   try {
+    // Dynamic import — only loads @google/genai when actually needed
+    const { GoogleGenAI, Type } = await import("@google/genai");
+
+    const ai = new GoogleGenAI({ apiKey: import.meta.env.VITE_GEMINI_API_KEY });
+
     const response = await ai.models.generateContent({
       model: 'gemini-2.5-flash',
       contents: `Analyze the following CSV data representing network nodes (MAC, IP, Hostname). 

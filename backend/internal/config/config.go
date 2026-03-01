@@ -3,6 +3,7 @@ package config
 import (
 	"log/slog"
 	"os"
+	"strings"
 
 	"gopkg.in/yaml.v3"
 )
@@ -23,6 +24,14 @@ type Config struct {
 	Cors struct {
 		AllowedOrigins []string `yaml:"allowed_origins"`
 	} `yaml:"cors"`
+
+	Vault struct {
+		Enabled    bool   `yaml:"enabled"`
+		Address    string `yaml:"address"`
+		Token      string `yaml:"token"`
+		MountPath  string `yaml:"mount_path"`
+		PathPrefix string `yaml:"path_prefix"`
+	} `yaml:"vault"`
 }
 
 func Load() *Config {
@@ -71,6 +80,17 @@ func Load() *Config {
 	}
 	if mode := os.Getenv("GIN_MODE"); mode != "" {
 		cfg.Server.Mode = mode
+	}
+
+	// Vault config from env vars
+	if vaultEnabled := os.Getenv("VAULT_ENABLED"); vaultEnabled != "" {
+		cfg.Vault.Enabled = strings.EqualFold(vaultEnabled, "true") || vaultEnabled == "1"
+	}
+	if vaultAddr := os.Getenv("VAULT_ADDR"); vaultAddr != "" {
+		cfg.Vault.Address = vaultAddr
+	}
+	if vaultToken := os.Getenv("VAULT_TOKEN"); vaultToken != "" {
+		cfg.Vault.Token = vaultToken
 	}
 
 	return cfg

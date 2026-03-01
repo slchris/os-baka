@@ -7,6 +7,7 @@ import (
 	"github.com/os-baka/backend/internal/api"
 	"github.com/os-baka/backend/internal/config"
 	"github.com/os-baka/backend/internal/model"
+	"github.com/os-baka/backend/internal/vault"
 
 	"github.com/gin-contrib/cors"
 	"github.com/gin-gonic/gin"
@@ -40,8 +41,18 @@ func main() {
 	// Init DB
 	model.InitDB(cfg)
 
-	// Inject DB into API handlers
-	api.InitHandlers(model.DB)
+	// Init secret store (Vault or DB fallback)
+	vaultCfg := &vault.Config{
+		Enabled:    cfg.Vault.Enabled,
+		Address:    cfg.Vault.Address,
+		Token:      cfg.Vault.Token,
+		MountPath:  cfg.Vault.MountPath,
+		PathPrefix: cfg.Vault.PathPrefix,
+	}
+	secretStore := vault.NewFromConfig(vaultCfg)
+
+	// Inject DB and secret store into API handlers
+	api.InitHandlers(model.DB, secretStore)
 
 	// Regenerate dnsmasq config to ensure consistency on startup
 	if err := api.GenerateDnsmasqConfig(); err != nil {
@@ -92,9 +103,10 @@ func main() {
 	// Root Endpoint
 	r.GET("/", func(c *gin.Context) {
 		c.JSON(200, gin.H{
-			"message": "OS Baka API (Go)",
-			"version": "0.1.0",
-			"docs":    "/api/v1/docs/index.html",
+			"message":      "OS Baka API (Go)",
+			"version":      "1.0.0",
+			"docs":         "/api/v1/docs/index.html",
+			"secret_store": secretStore.Type(),
 		})
 	})
 
