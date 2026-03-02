@@ -59,7 +59,11 @@ func Load() *Config {
 	}
 
 	if file != nil {
-		defer file.Close()
+		defer func() {
+			if cerr := file.Close(); cerr != nil {
+				slog.Error("Failed to close config file", "error", cerr)
+			}
+		}()
 		decoder := yaml.NewDecoder(file)
 		if err := decoder.Decode(cfg); err != nil {
 			slog.Error("Failed to decode config file", "error", err)

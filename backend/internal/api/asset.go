@@ -58,7 +58,11 @@ func (h *AssetHandler) UploadAsset(c *gin.Context) {
 		ErrorResponse(c, http.StatusBadRequest, "No file provided")
 		return
 	}
-	defer file.Close()
+	defer func() {
+		if cerr := file.Close(); cerr != nil {
+			fmt.Printf("Warning: Failed to close uploaded file: %v\n", cerr)
+		}
+	}()
 
 	assetType := c.PostForm("type")
 	if assetType == "" {
@@ -95,7 +99,11 @@ func (h *AssetHandler) UploadAsset(c *gin.Context) {
 		ErrorResponse(c, http.StatusInternalServerError, "Failed to create file: "+err.Error())
 		return
 	}
-	defer out.Close()
+	defer func() {
+		if cerr := out.Close(); cerr != nil {
+			fmt.Printf("Warning: Failed to close output file: %v\n", cerr)
+		}
+	}()
 
 	hash := sha256.New()
 	writer := io.MultiWriter(out, hash)
@@ -120,7 +128,9 @@ func (h *AssetHandler) UploadAsset(c *gin.Context) {
 
 	if result := getDB().Create(&asset); result.Error != nil {
 		// Cleanup file if DB insert fails
-		os.Remove(destPath)
+		if removeErr := os.Remove(destPath); removeErr != nil {
+			fmt.Printf("Warning: Failed to cleanup file %s: %v\n", destPath, removeErr)
+		}
 		ErrorResponse(c, http.StatusInternalServerError, result.Error.Error())
 		return
 	}

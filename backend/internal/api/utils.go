@@ -168,8 +168,7 @@ func isPrivateIP(ip string) bool {
 		parts := strings.SplitN(ip, ".", 3)
 		if len(parts) >= 2 {
 			var second int
-			fmt.Sscanf(parts[1], "%d", &second)
-			if second >= 16 && second <= 31 {
+			if _, err := fmt.Sscanf(parts[1], "%d", &second); err == nil && second >= 16 && second <= 31 {
 				return true
 			}
 		}

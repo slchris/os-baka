@@ -1,6 +1,7 @@
 package api
 
 import (
+	"log/slog"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
@@ -170,7 +171,9 @@ func (h *DHCPHandler) CreateConfig(c *gin.Context) {
 	}
 
 	// Regenerate dnsmasq config
-	GenerateDnsmasqConfig()
+	if err := GenerateDnsmasqConfig(); err != nil {
+		slog.Warn("Failed to regenerate dnsmasq config", "error", err)
+	}
 
 	c.JSON(http.StatusCreated, config)
 }
@@ -242,7 +245,9 @@ func (h *DHCPHandler) UpdateConfig(c *gin.Context) {
 	getDB().Save(&config)
 
 	// Regenerate dnsmasq config
-	GenerateDnsmasqConfig()
+	if err := GenerateDnsmasqConfig(); err != nil {
+		slog.Warn("Failed to regenerate dnsmasq config", "error", err)
+	}
 
 	c.JSON(http.StatusOK, config)
 }
@@ -347,7 +352,9 @@ func (h *DHCPHandler) CreateReservation(c *gin.Context) {
 	}
 
 	// Regenerate dnsmasq config
-	GenerateDnsmasqConfig()
+	if err := GenerateDnsmasqConfig(); err != nil {
+		slog.Warn("Failed to regenerate dnsmasq config", "error", err)
+	}
 
 	c.JSON(http.StatusCreated, reservation)
 }
@@ -394,7 +401,9 @@ func (h *DHCPHandler) UpdateReservation(c *gin.Context) {
 	getDB().Save(&reservation)
 
 	// Regenerate dnsmasq config
-	GenerateDnsmasqConfig()
+	if err := GenerateDnsmasqConfig(); err != nil {
+		slog.Warn("Failed to regenerate dnsmasq config", "error", err)
+	}
 
 	c.JSON(http.StatusOK, reservation)
 }
@@ -416,7 +425,9 @@ func (h *DHCPHandler) DeleteReservation(c *gin.Context) {
 	getDB().Delete(&model.DHCPReservation{}, id)
 
 	// Regenerate dnsmasq config
-	GenerateDnsmasqConfig()
+	if err := GenerateDnsmasqConfig(); err != nil {
+		slog.Warn("Failed to regenerate dnsmasq config", "error", err)
+	}
 
 	c.JSON(http.StatusOK, gin.H{"success": true})
 }
@@ -465,7 +476,9 @@ func (h *DHCPHandler) SyncFromNodes(c *gin.Context) {
 	}
 
 	// Regenerate dnsmasq config
-	GenerateDnsmasqConfig()
+	if err := GenerateDnsmasqConfig(); err != nil {
+		slog.Warn("Failed to regenerate dnsmasq config", "error", err)
+	}
 
 	c.JSON(http.StatusOK, gin.H{
 		"success": true,

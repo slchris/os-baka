@@ -1,7 +1,6 @@
 package config
 
 import (
-	"os"
 	"testing"
 )
 
@@ -20,8 +19,7 @@ func TestLoadDefaults(t *testing.T) {
 }
 
 func TestLoadEnvOverride(t *testing.T) {
-	os.Setenv("PORT", "9999")
-	defer os.Unsetenv("PORT")
+	t.Setenv("PORT", "9999")
 
 	cfg := Load()
 
@@ -31,8 +29,7 @@ func TestLoadEnvOverride(t *testing.T) {
 }
 
 func TestLoadSecretKeyEnvOverride(t *testing.T) {
-	os.Setenv("SECRET_KEY", "test-secret-12345")
-	defer os.Unsetenv("SECRET_KEY")
+	t.Setenv("SECRET_KEY", "test-secret-12345")
 
 	cfg := Load()
 

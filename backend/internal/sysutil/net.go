@@ -23,7 +23,7 @@ func ListInterfaces() ([]NetworkInterface, error) {
 	for _, i := range ifaces {
 		// Skip down interfaces or loopback if desired, but user might want to debug
 		// For now we list everything, but we can filter active ones in frontend or here
-		
+
 		var flags []string
 		if i.Flags&net.FlagUp != 0 {
 			flags = append(flags, "UP")
@@ -65,7 +65,7 @@ func GetLocalIP() string {
 	if err != nil {
 		return ""
 	}
-	defer conn.Close()
+	defer func() { _ = conn.Close() }()
 
 	localAddr := conn.LocalAddr().(*net.UDPAddr)
 	return localAddr.IP.String()

@@ -178,7 +178,7 @@ func (h *PXEHandler) BootScript(c *gin.Context) {
 		b.WriteString("item local  Boot from local disk\n")
 		b.WriteString("item shell  iPXE shell\n")
 		b.WriteString("choose --timeout 15000 --default auto target && goto ${target} || goto shell\n")
-		b.WriteString(fmt.Sprintf("\n:auto\nchain %s/api/v1/pxe/boot/${net0/mac}?menu=0 || goto shell\n", backendURL))
+		fmt.Fprintf(&b, "\n:auto\nchain %s/api/v1/pxe/boot/${net0/mac}?menu=0 || goto shell\n", backendURL)
 		b.WriteString("\n:local\n")
 		b.WriteString("sanboot --no-describe --drive 0x80 || goto shell\n")
 		b.WriteString("\n:shell\n")
@@ -217,12 +217,12 @@ func (h *PXEHandler) BootScript(c *gin.Context) {
 			}
 			fullURL := fmt.Sprintf("%s/dists/%s/main/installer-amd64/current/legacy-images/netboot/ubuntu-installer/amd64", baseMirror, release)
 
-			script.WriteString(fmt.Sprintf(`set base-url %s
+			fmt.Fprintf(&script, `set base-url %s
 kernel ${base-url}/linux
 initrd ${base-url}/initrd.gz
 imgargs linux auto=true priority=critical url=%s/api/v1/pxe/preseed/${net0/mac:hexhyp} hostname=%s domain=os-baka.local interface=auto netcfg/dhcp_timeout=60%s
 boot || shell
-`, fullURL, backendURL, node.Hostname, extraArgs))
+`, fullURL, backendURL, node.Hostname, extraArgs)
 
 		case "debian":
 			baseMirror := resolveMirror(node.OSType, node.MirrorURL, mirrorURL)
@@ -232,12 +232,12 @@ boot || shell
 			}
 			fullURL := fmt.Sprintf("%s/dists/%s/main/installer-amd64/current/images/netboot/debian-installer/amd64", baseMirror, release)
 
-			script.WriteString(fmt.Sprintf(`set base-url %s
+			fmt.Fprintf(&script, `set base-url %s
 kernel ${base-url}/linux
 initrd ${base-url}/initrd.gz
 imgargs linux auto=true priority=critical url=%s/pxe/preseed/${net0/mac:hexhyp} hostname=%s domain=os-baka.local interface=auto netcfg/dhcp_timeout=60%s
 boot || shell
-`, fullURL, backendURL, node.Hostname, extraArgs))
+`, fullURL, backendURL, node.Hostname, extraArgs)
 
 		case "centos", "rhel", "rocky":
 			baseMirror := resolveMirror(node.OSType, node.MirrorURL, mirrorURL)
@@ -247,12 +247,12 @@ boot || shell
 			}
 			fullURL := fmt.Sprintf("%s/%s/BaseOS/x86_64/os/images/pxeboot", baseMirror, release)
 
-			script.WriteString(fmt.Sprintf(`set base-url %s
+			fmt.Fprintf(&script, `set base-url %s
 kernel ${base-url}/vmlinuz
 initrd ${base-url}/initrd.img
 imgargs vmlinuz inst.ks=%s/pxe/kickstart/${net0/mac:hexhyp} ip=dhcp%s
 boot || shell
-`, fullURL, backendURL, extraArgs))
+`, fullURL, backendURL, extraArgs)
 
 		default:
 			// Unsupported OS - drop to shell
