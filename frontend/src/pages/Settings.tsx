@@ -18,12 +18,15 @@ export const Settings: React.FC = () => {
   const [users, setUsers] = useState<User[]>([]);
 
   useEffect(() => {
-    setUsers(BackendService.getUsers());
+    const loadUsers = async () => {
+      const loaded = await BackendService.getUsers();
+      setUsers(loaded);
+    };
+    loadUsers();
   }, []);
 
-  const handleRoleChange = (userId: string, newRole: string) => {
-    // In a real app, we'd validate this casting
-    const updated = BackendService.updateUserRole(userId, newRole as Role);
+  const handleRoleChange = async (userId: string, newRole: string) => {
+    const updated = await BackendService.updateUserRole(userId, newRole as Role);
     setUsers(updated);
   };
 

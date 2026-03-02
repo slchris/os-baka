@@ -50,7 +50,7 @@ func (h *AuthHandler) Login(c *gin.Context) {
 		return
 	}
 
-	token, err := GenerateToken(user.ID, user.Username, h.Config)
+	token, err := GenerateToken(user.ID, user.Username, user.IsSuperuser, h.Config)
 	if err != nil {
 		ErrorResponse(c, http.StatusInternalServerError, "Failed to generate token")
 		return

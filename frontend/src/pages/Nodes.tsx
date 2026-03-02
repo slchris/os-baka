@@ -378,21 +378,25 @@ export const Nodes: React.FC = () => {
     }
   }
 
-  const testIpmiConnection = () => {
+  const testIpmiConnection = async () => {
     if (!ipmiIp || !ipmiUser) return;
     setIpmiTestStatus('loading');
 
-    // Simulate network call
-    setTimeout(() => {
-      // Mock logic: Success if IP is not empty and doesn't simulate error condition
-      // In real app, this would call backend with credentials
-      const isIp = /^(?:[0-9]{1,3}\.){3}[0-9]{1,3}$/.test(ipmiIp);
-      if (isIp) {
-        setIpmiTestStatus('success');
-      } else {
+    if (editingNodeId) {
+      // For existing nodes, call the backend IPMI test endpoint
+      try {
+        const res = await NodesApi.testIpmi(parseInt(editingNodeId));
+        setIpmiTestStatus(res.reachable ? 'success' : 'error');
+      } catch {
         setIpmiTestStatus('error');
       }
-    }, 1500);
+    } else {
+      // For new nodes (not yet saved), validate IP format locally
+      const isIp = /^(?:[0-9]{1,3}\.){3}[0-9]{1,3}$/.test(ipmiIp);
+      setTimeout(() => {
+        setIpmiTestStatus(isIp ? 'success' : 'error');
+      }, 500);
+    }
   };
 
   const downloadTemplate = () => {

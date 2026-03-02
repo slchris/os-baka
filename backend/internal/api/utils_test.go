@@ -160,7 +160,7 @@ func TestGenerateToken(t *testing.T) {
 	cfg := &config.Config{}
 	cfg.Server.SecretKey = "test-secret-key-12345"
 
-	token, err := GenerateToken(1, "testuser", cfg)
+	token, err := GenerateToken(1, "testuser", false, cfg)
 	if err != nil {
 		t.Fatalf("GenerateToken() error = %v", err)
 	}
@@ -179,8 +179,8 @@ func TestGenerateTokenDifferentUsers(t *testing.T) {
 	cfg := &config.Config{}
 	cfg.Server.SecretKey = "test-secret-key-12345"
 
-	token1, _ := GenerateToken(1, "user1", cfg)
-	token2, _ := GenerateToken(2, "user2", cfg)
+	token1, _ := GenerateToken(1, "user1", false, cfg)
+	token2, _ := GenerateToken(2, "user2", false, cfg)
 
 	if token1 == token2 {
 		t.Error("GenerateToken() should produce different tokens for different users")
@@ -244,7 +244,7 @@ func TestAuthMiddlewareValidToken(t *testing.T) {
 	cfg.Server.SecretKey = "test-secret-key-12345"
 
 	// Generate a valid token
-	token, err := GenerateToken(42, "admin", cfg)
+	token, err := GenerateToken(42, "admin", true, cfg)
 	if err != nil {
 		t.Fatalf("GenerateToken() error = %v", err)
 	}
@@ -284,7 +284,7 @@ func TestAuthMiddlewareWrongSecret(t *testing.T) {
 	cfg2.Server.SecretKey = "secret-2"
 
 	// Token signed with secret-1
-	token, _ := GenerateToken(1, "user", cfg1)
+	token, _ := GenerateToken(1, "user", false, cfg1)
 
 	w := httptest.NewRecorder()
 	c, r := gin.CreateTestContext(w)

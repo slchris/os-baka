@@ -112,6 +112,8 @@ func main() {
 
 	authHandler := api.NewAuthHandler(cfg)
 	nodeHandler := api.NewNodeHandler()
+	sshHandler := api.NewSSHHandler(cfg)
+	userHandler := api.NewUserHandler()
 
 	// API Group
 	apiGroup := r.Group("/api/v1")
@@ -123,37 +125,71 @@ func main() {
 		// Swagger Docs
 		apiGroup.GET("/docs/*any", ginSwagger.WrapHandler(swaggerFiles.Handler))
 
-		// Auth
-		apiGroup.POST("/auth/login", authHandler.Login)
+		// Auth (with login-specific rate limiting)
+		apiGroup.POST("/auth/login", api.LoginRateLimitMiddleware(), authHandler.Login)
 
 		// PXE Boot Services (Publicly accessible by booting machines)
 		pxeHandler := api.NewPXEHandler()
 		apiGroup.GET("/pxe/init", pxeHandler.InitScript)
 		apiGroup.GET("/pxe/boot/:mac", pxeHandler.BootScript)
 		apiGroup.GET("/pxe/preseed/:mac", pxeHandler.Preseed)
-		apiGroup.GET("/pxe/kickstart/:mac", pxeHandler.Kickstart)
 		apiGroup.GET("/pxe/postinstall/:mac", pxeHandler.PostInstall)
+
+		// WebSocket SSH proxy (auth via first WS message, not HTTP header)
+		apiGroup.GET("/ws/ssh", sshHandler.HandleSSH)
 
 		// Internal API (used by postinstall scripts, restricted access)
 		internalGroup := apiGroup.Group("/internal")
 		internalGroup.Use(api.InternalAPIMiddleware(cfg))
 		{
 			internalGroup.PUT("/nodes/:id/status", nodeHandler.UpdateNodeStatus)
+			heartbeatHandler := api.NewHeartbeatHandler()
+			internalGroup.POST("/nodes/:id/heartbeat", heartbeatHandler.Heartbeat)
 		}
 
 		// Protected Routes
 		protected := apiGroup.Group("/")
 		protected.Use(api.AuthMiddleware(cfg))
+		protected.Use(api.AuditMiddleware())
 		{
 			protected.GET("/auth/me", authHandler.Me)
 
 			// Nodes
 			protected.GET("/nodes", nodeHandler.ListNodes)
-			protected.POST("/nodes", nodeHandler.CreateNode)
-			protected.PUT("/nodes/:id", nodeHandler.UpdateNode)
-			protected.POST("/nodes/:id/rebuild", nodeHandler.RebuildNode)
-			protected.GET("/nodes/:id/passphrase", nodeHandler.GetPassphrase)
-			protected.DELETE("/nodes/:id", nodeHandler.DeleteNode)
+			protected.POST("/nodes", api.RequireRole("admin", "operator"), nodeHandler.CreateNode)
+			protected.PUT("/nodes/:id", api.RequireRole("admin", "operator"), nodeHandler.UpdateNode)
+			protected.POST("/nodes/:id/rebuild", api.RequireRole("admin", "operator"), nodeHandler.RebuildNode)
+			protected.GET("/nodes/:id/passphrase", api.RequireRole("admin"), nodeHandler.GetPassphrase)
+			protected.POST("/nodes/:id/rotate-passphrase", api.RequireRole("admin"), nodeHandler.RotatePassphrase)
+			protected.DELETE("/nodes/:id", api.RequireRole("admin"), nodeHandler.DeleteNode)
+
+			// IPMI Power Management
+			ipmiHandler := api.NewIPMIHandler()
+			protected.POST("/nodes/:id/power", api.RequireRole("admin", "operator"), ipmiHandler.PowerAction)
+			protected.GET("/nodes/:id/ipmi/test", api.RequireRole("admin", "operator"), ipmiHandler.TestIPMI)
+
+			// Node Groups & Tags
+			groupHandler := api.NewGroupHandler()
+			protected.GET("/groups", groupHandler.ListGroups)
+			protected.POST("/groups", api.RequireRole("admin"), groupHandler.CreateGroup)
+			protected.PUT("/groups/:id", api.RequireRole("admin"), groupHandler.UpdateGroup)
+			protected.DELETE("/groups/:id", api.RequireRole("admin"), groupHandler.DeleteGroup)
+			protected.PUT("/nodes/:id/group", api.RequireRole("admin", "operator"), groupHandler.AssignGroup)
+			protected.GET("/nodes/:id/tags", groupHandler.ListNodeTags)
+			protected.PUT("/nodes/:id/tags", api.RequireRole("admin", "operator"), groupHandler.SetNodeTags)
+
+			// Bulk Operations
+			bulkHandler := api.NewBulkHandler()
+			protected.POST("/nodes/bulk/rebuild", api.RequireRole("admin", "operator"), bulkHandler.BulkRebuild)
+			protected.POST("/nodes/bulk/delete", api.RequireRole("admin"), bulkHandler.BulkDelete)
+			protected.PUT("/nodes/bulk/group", api.RequireRole("admin", "operator"), bulkHandler.BulkAssignGroup)
+
+			// Users (all user management is admin-only, enforced in handler too)
+			protected.GET("/users", userHandler.ListUsers)
+			protected.POST("/users", userHandler.CreateUser)
+			protected.PUT("/users/:id", userHandler.UpdateUser)
+			protected.PUT("/users/:id/password", userHandler.ChangePassword)
+			protected.DELETE("/users/:id", userHandler.DeleteUser)
 
 			// DHCP Configuration
 			dhcpHandler := api.NewDHCPHandler()
@@ -190,8 +226,22 @@ func main() {
 			notificationHandler := api.NewNotificationHandler()
 			protected.GET("/notifications", notificationHandler.List)
 			protected.POST("/notifications/:id/read", notificationHandler.MarkRead)
+
+			// Audit Logs
+			auditHandler := api.NewAuditHandler()
+			protected.GET("/audit-logs", auditHandler.ListAuditLogs)
+
+			// API Keys (admin-only)
+			apiKeyHandler := api.NewAPIKeyHandler()
+			protected.GET("/api-keys", api.RequireRole("admin"), apiKeyHandler.ListAPIKeys)
+			protected.POST("/api-keys", api.RequireRole("admin"), apiKeyHandler.CreateAPIKey)
+			protected.DELETE("/api-keys/:id", api.RequireRole("admin"), apiKeyHandler.RevokeAPIKey)
+			protected.POST("/api-keys/:id/rotate", api.RequireRole("admin"), apiKeyHandler.RotateAPIKey)
 		}
 	}
+
+	// Start background stale node checker (every 5 min, threshold 10 min)
+	api.StartStaleNodeChecker(5, 10)
 
 	slog.Info("Server starting", "port", cfg.Server.Port)
 	if err := r.Run(":" + cfg.Server.Port); err != nil {

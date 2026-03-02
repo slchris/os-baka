@@ -1,7 +1,7 @@
 
 import React from 'react';
 import { NavLink } from 'react-router-dom';
-import { LayoutDashboard, Server, Key, Terminal, Settings, Network, BookOpen } from 'lucide-react';
+import { LayoutDashboard, Server, Key, Terminal, Settings, Network, BookOpen, ClipboardList } from 'lucide-react';
 
 export const Sidebar: React.FC = () => {
   const menuItems = [
@@ -10,6 +10,7 @@ export const Sidebar: React.FC = () => {
     { id: 'dhcp', label: 'DHCP Settings', icon: Network, path: '/dhcp' },
     { id: 'keyvault', label: 'Key Vault', icon: Key, path: '/keyvault' },
     { id: 'webshell', label: 'WebShell', icon: Terminal, path: '/webshell' },
+    { id: 'audit', label: 'Audit Logs', icon: ClipboardList, path: '/audit' },
     { id: 'settings', label: 'Settings', icon: Settings, path: '/settings' },
     { id: 'documentation', label: 'Documentation', icon: BookOpen, path: '/documentation' },
   ];

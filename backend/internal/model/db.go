@@ -28,8 +28,8 @@ type Node struct {
 	IPAddress            string
 	MACAddress           string `gorm:"uniqueIndex:idx_node_mac_active,where:deleted_at IS NULL"`
 	AssetTag             string
-	Status               string // active, inactive, installing, maintenance, error
-	OSType               string // ubuntu, debian, centos, rhel, rocky, windows
+	Status               string // active, inactive, installing, maintenance, error, offline
+	OSType               string // ubuntu, debian
 	OSVersion            string `json:"os_version"`
 	MirrorURL            string `json:"mirror_url"`     // Custom mirror URL for this node
 	Timezone             string `json:"timezone"`       // Timezone for the node (e.g., UTC, Asia/Shanghai)
@@ -41,6 +41,19 @@ type Node struct {
 	TPMEnabled           bool   `json:"tpm_enabled"`
 	USBKeyRequired       bool   `json:"usb_key_required"`
 	PCRBinding           string `json:"pcr_binding"` // comma-separated PCR ids, optional
+	// IPMI / BMC
+	IPMIAddress        string `json:"ipmi_address"`
+	IPMIUsername       string `json:"ipmi_username"`
+	IPMIPassword       string `json:"-"` // stored encrypted
+	IPMIAllowUntrusted bool   `json:"ipmi_allow_untrusted"`
+	// Heartbeat / Health
+	LastHeartbeat *time.Time `json:"last_heartbeat"`
+	CPUUsage      float64    `json:"cpu_usage"`    // percentage 0-100
+	MemoryUsage   float64    `json:"memory_usage"` // percentage 0-100
+	DiskUsage     float64    `json:"disk_usage"`   // percentage 0-100
+	Uptime        int64      `json:"uptime"`       // seconds
+	// Grouping
+	GroupID *uint `json:"group_id"`
 }
 
 type Notification struct {
@@ -104,6 +117,52 @@ type BootAsset struct {
 	CheckSum  string         `json:"checksum"` // SHA256
 }
 
+// AuditLog records security-relevant actions for compliance and troubleshooting.
+type AuditLog struct {
+	ID         uint      `gorm:"primarykey" json:"id"`
+	CreatedAt  time.Time `json:"timestamp"`
+	Action     string    `gorm:"index" json:"action"`      // e.g. node.create, user.login, dhcp.update
+	UserID     uint      `json:"user_id"`                  // 0 for system/anonymous
+	Username   string    `json:"user"`                     // denormalized for display
+	Resource   string    `json:"resource"`                 // e.g. node, user, dhcp_config
+	ResourceID string    `json:"resource_id"`              // ID of the affected resource
+	Details    string    `gorm:"type:text" json:"details"` // JSON or free-form description
+	IPAddress  string    `json:"ip_address"`               // Client IP
+}
+
+// NodeGroup allows organizing nodes into logical groups.
+type NodeGroup struct {
+	ID          uint      `gorm:"primarykey" json:"id"`
+	CreatedAt   time.Time `json:"created_at"`
+	UpdatedAt   time.Time `json:"updated_at"`
+	Name        string    `gorm:"uniqueIndex" json:"name"`
+	Description string    `json:"description"`
+	Color       string    `json:"color"` // hex color for UI display
+}
+
+// NodeTag provides key-value labels for nodes.
+type NodeTag struct {
+	ID     uint   `gorm:"primarykey" json:"id"`
+	NodeID uint   `gorm:"index" json:"node_id"`
+	Key    string `gorm:"index" json:"key"`
+	Value  string `json:"value"`
+}
+
+// APIKey enables programmatic access (CI/CD, Terraform, scripts).
+type APIKey struct {
+	ID         uint       `gorm:"primarykey" json:"id"`
+	CreatedAt  time.Time  `json:"created_at"`
+	UpdatedAt  time.Time  `json:"updated_at"`
+	Name       string     `json:"name"`                          // Human-readable description
+	Prefix     string     `gorm:"uniqueIndex" json:"prefix"`     // First 8 chars for identification (e.g. "osbaka_a")
+	KeyHash    string     `gorm:"index" json:"-"`                // SHA-256 hash of full key
+	Role       string     `json:"role"`                          // admin or operator
+	CreatedBy  uint       `json:"created_by"`                    // User ID who created the key
+	LastUsedAt *time.Time `json:"last_used_at"`                  // Last time the key was used
+	ExpiresAt  *time.Time `json:"expires_at"`                    // Optional expiration
+	IsActive   bool       `gorm:"default:true" json:"is_active"` // Soft disable
+}
+
 func InitDB(cfg *config.Config) {
 	var err error
 	DB, err = gorm.Open(postgres.Open(cfg.Database.URL), &gorm.Config{})
@@ -114,8 +173,24 @@ func InitDB(cfg *config.Config) {
 
 	slog.Info("Database connected successfully")
 
+	// Configure connection pool
+	sqlDB, poolErr := DB.DB()
+	if poolErr == nil {
+		maxIdle := cfg.Database.MaxIdleConns
+		if maxIdle <= 0 {
+			maxIdle = 10
+		}
+		maxOpen := cfg.Database.MaxOpenConns
+		if maxOpen <= 0 {
+			maxOpen = 100
+		}
+		sqlDB.SetMaxIdleConns(maxIdle)
+		sqlDB.SetMaxOpenConns(maxOpen)
+		slog.Info("Database pool configured", "max_idle", maxIdle, "max_open", maxOpen)
+	}
+
 	// Auto Migrate
-	err = DB.AutoMigrate(&User{}, &Node{}, &Notification{}, &DHCPConfig{}, &DHCPReservation{}, &BootAsset{})
+	err = DB.AutoMigrate(&User{}, &Node{}, &Notification{}, &DHCPConfig{}, &DHCPReservation{}, &BootAsset{}, &AuditLog{}, &NodeGroup{}, &NodeTag{}, &APIKey{})
 	if err != nil {
 		slog.Error("Failed to migrate database", "error", err)
 	}

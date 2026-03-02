@@ -1,6 +1,7 @@
 package api
 
 import (
+	cryptoRand "crypto/rand"
 	"log/slog"
 	"net"
 	"net/http"
@@ -457,4 +458,89 @@ func (h *NodeHandler) RebuildNode(c *gin.Context) {
 		"message": "Node rebuild initiated. System will reinstall on next boot.",
 		"status":  node.Status,
 	})
+}
+
+// RotatePassphrase generates a new encryption passphrase for a node,
+// stores it in Vault (or DB fallback), and returns the new passphrase.
+// @Summary      Rotate node encryption passphrase
+// @Description  Generate a new passphrase, store it in the secret store, and return it
+// @Tags         assets
+// @Produce      json
+// @Security     BearerAuth
+// @Param        id path int true "Node ID"
+// @Success      200  {object} map[string]interface{}
+// @Failure      400  {object} map[string]string
+// @Failure      404  {object} map[string]string
+// @Router       /nodes/{id}/rotate-passphrase [post]
+func (h *NodeHandler) RotatePassphrase(c *gin.Context) {
+	id, ok := ParseIDParam(c, "id")
+	if !ok {
+		return
+	}
+
+	var node model.Node
+	if result := getDB().First(&node, id); result.Error != nil {
+		ErrorResponse(c, http.StatusNotFound, "Node not found")
+		return
+	}
+
+	if !node.EncryptionEnabled {
+		ErrorResponse(c, http.StatusBadRequest, "Encryption not enabled for this node")
+		return
+	}
+
+	// Generate cryptographically secure passphrase (32 chars)
+	newPassphrase, err := generateSecurePassphrase(32)
+	if err != nil {
+		ErrorResponse(c, http.StatusInternalServerError, "Failed to generate passphrase")
+		return
+	}
+
+	// Store in Vault or DB
+	source := "database"
+	if store := getSecretStore(); store != nil {
+		if storeErr := store.StorePassphrase(c.Request.Context(), node.ID, newPassphrase); storeErr != nil {
+			slog.Error("Failed to store rotated passphrase", "nodeID", node.ID, "error", storeErr)
+			// Fall through to DB storage
+		} else if store.Type() == "vault" {
+			source = "vault"
+			// Mark DB copy as vault-managed
+			getDB().Model(&node).Update("encryption_passphrase", "vault:managed")
+		}
+	}
+
+	// If source is still database, store directly
+	if source == "database" {
+		getDB().Model(&node).Update("encryption_passphrase", newPassphrase)
+	}
+
+	// Audit log
+	WriteAuditLog(c, "node.rotate_passphrase", "node", strconv.Itoa(id), "Passphrase rotated, stored in "+source)
+
+	c.JSON(http.StatusOK, gin.H{
+		"passphrase": newPassphrase,
+		"source":     source,
+		"message":    "Passphrase rotated successfully",
+	})
+}
+
+// generateSecurePassphrase creates a cryptographically secure random passphrase.
+func generateSecurePassphrase(length int) (string, error) {
+	const charset = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!@#$%^&*()-_=+"
+	result := make([]byte, length)
+	randomBytes := make([]byte, length)
+	if _, err := cryptoRandRead(randomBytes); err != nil {
+		return "", err
+	}
+	for i := 0; i < length; i++ {
+		result[i] = charset[int(randomBytes[i])%len(charset)]
+	}
+	return string(result), nil
+}
+
+// cryptoRandRead is a variable to allow testing. Default is crypto/rand.Read.
+var cryptoRandRead = cryptoRandReadDefault
+
+func cryptoRandReadDefault(b []byte) (int, error) {
+	return cryptoRand.Read(b)
 }

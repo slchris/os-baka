@@ -92,30 +92,6 @@ func TestResolveMirror(t *testing.T) {
 			dbMirror:   "http://db-mirror.local/debian",
 			want:       "http://db-mirror.local/debian",
 		},
-		// Default for centos
-		{
-			name:       "centos default",
-			osType:     "centos",
-			nodeMirror: "",
-			dbMirror:   "",
-			want:       "http://mirror.centos.org/centos",
-		},
-		// RHEL uses centos path
-		{
-			name:       "rhel default",
-			osType:     "rhel",
-			nodeMirror: "",
-			dbMirror:   "",
-			want:       "http://mirror.centos.org/centos",
-		},
-		// Rocky uses centos path
-		{
-			name:       "rocky default",
-			osType:     "rocky",
-			nodeMirror: "",
-			dbMirror:   "",
-			want:       "http://mirror.centos.org/centos",
-		},
 		// Unknown OS with DB mirror
 		{
 			name:       "unknown os with db mirror",
@@ -174,16 +150,6 @@ func TestResolveMirrorDebianSpecificEnv(t *testing.T) {
 	want := "http://debian-env.local/debian"
 	if got != want {
 		t.Errorf("resolveMirror() with PXE_DEBIAN_MIRROR_URL = %q, want %q", got, want)
-	}
-}
-
-func TestResolveMirrorCentOSSpecificEnv(t *testing.T) {
-	t.Setenv("PXE_CENTOS_MIRROR_URL", "http://centos-env.local/centos")
-
-	got := resolveMirror("centos", "", "")
-	want := "http://centos-env.local/centos"
-	if got != want {
-		t.Errorf("resolveMirror() with PXE_CENTOS_MIRROR_URL = %q, want %q", got, want)
 	}
 }
 

@@ -10,6 +10,7 @@ import { DHCPSettings } from './pages/DHCPSettings';
 import { WebShell } from './pages/WebShell';
 import { Notifications } from './pages/Notifications';
 import { Documentation } from './pages/Documentation';
+import { AuditLogs } from './pages/AuditLogs';
 
 /**
  * Protected Route Component
@@ -73,6 +74,10 @@ export const router = createBrowserRouter([
       {
         path: 'documentation',
         element: <Documentation />,
+      },
+      {
+        path: 'audit',
+        element: <AuditLogs />,
       },
       {
         path: 'settings',

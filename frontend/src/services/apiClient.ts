@@ -206,6 +206,21 @@ export const NodesApi = {
   async delete(id: number): Promise<void> {
     await httpClient.delete(`/nodes/${id}`);
   },
+
+  async rotatePassphrase(id: number): Promise<{ passphrase: string; source: string; message: string }> {
+    const res = await httpClient.post<{ passphrase: string; source: string; message: string }>(`/nodes/${id}/rotate-passphrase`);
+    return res.data;
+  },
+
+  async testIpmi(id: number): Promise<{ reachable: boolean; power_status?: string; error?: string; latency_ms: number }> {
+    const res = await httpClient.get<{ reachable: boolean; power_status?: string; error?: string; latency_ms: number }>(`/nodes/${id}/ipmi/test`);
+    return res.data;
+  },
+
+  async powerAction(id: number, action: string): Promise<{ success: boolean; output: string }> {
+    const res = await httpClient.post<{ success: boolean; output: string }>(`/nodes/${id}/power`, { action });
+    return res.data;
+  },
 };
 
 // Dashboard & Notifications (to be added to backend)
@@ -214,12 +229,11 @@ export interface DashboardSummary {
   nodes_active: number;
   nodes_error: number;
   nodes_installing: number;
-  deployments_total: number;
-  deployments_pending: number;
-  deployments_in_progress: number;
-  deployments_completed: number;
-  deployments_failed: number;
-  pxe_service_running: boolean;
+  nodes_encrypted: number;
+  users_total: number;
+  dnsmasq_running: boolean;
+  vault_backend: string;
+  recent_activity: AuditLogItem[];
 }
 
 export interface NotificationItem {
@@ -246,6 +260,77 @@ export const NotificationsApi = {
 
   async markRead(id: string): Promise<void> {
     await httpClient.post(`/notifications/${id}/read`);
+  },
+};
+
+// Users API
+export interface UserView {
+  id: number;
+  username: string;
+  email: string;
+  full_name: string;
+  role: string; // admin, operator, auditor
+}
+
+export interface CreateUserRequest {
+  username: string;
+  email: string;
+  full_name?: string;
+  password: string;
+  role?: string;
+}
+
+export interface UpdateUserRequest {
+  email?: string;
+  full_name?: string;
+  role?: string;
+}
+
+export const UsersApi = {
+  async list(): Promise<{ items: UserView[]; total: number }> {
+    const res = await httpClient.get<{ items: UserView[]; total: number }>('/users');
+    return res.data;
+  },
+
+  async create(data: CreateUserRequest): Promise<UserView> {
+    const res = await httpClient.post<UserView>('/users', data);
+    return res.data;
+  },
+
+  async update(id: number, data: UpdateUserRequest): Promise<UserView> {
+    const res = await httpClient.put<UserView>(`/users/${id}`, data);
+    return res.data;
+  },
+
+  async changePassword(id: number, oldPassword: string, newPassword: string): Promise<void> {
+    await httpClient.put(`/users/${id}/password`, {
+      old_password: oldPassword,
+      new_password: newPassword,
+    });
+  },
+
+  async delete(id: number): Promise<void> {
+    await httpClient.delete(`/users/${id}`);
+  },
+};
+
+// Audit Logs API
+export interface AuditLogItem {
+  id: number;
+  timestamp: string;
+  action: string;
+  user_id: number;
+  user: string;
+  resource: string;
+  resource_id: string;
+  details: string;
+  ip_address: string;
+}
+
+export const AuditApi = {
+  async list(params?: { page?: number; limit?: number; action?: string }): Promise<{ items: AuditLogItem[]; total: number; page: number; limit: number }> {
+    const res = await httpClient.get<{ items: AuditLogItem[]; total: number; page: number; limit: number }>('/audit-logs', { params });
+    return res.data;
   },
 };
 

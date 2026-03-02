@@ -11,6 +11,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/os-baka/backend/internal/config"
+	"github.com/os-baka/backend/internal/model"
 	"golang.org/x/crypto/bcrypt"
 )
 
@@ -26,10 +27,15 @@ func CheckPasswordHash(password, hash string) bool {
 	return err == nil
 }
 
-func GenerateToken(userID uint, username string, cfg *config.Config) (string, error) {
+func GenerateToken(userID uint, username string, isSuperuser bool, cfg *config.Config) (string, error) {
+	role := "operator"
+	if isSuperuser {
+		role = "admin"
+	}
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.MapClaims{
 		"sub":  userID,
 		"name": username,
+		"role": role,
 		"exp":  time.Now().Add(time.Hour * 24).Unix(),
 	})
 
@@ -53,6 +59,31 @@ func AuthMiddleware(cfg *config.Config) gin.HandlerFunc {
 
 		tokenString := parts[1]
 
+		// === API Key path: tokens starting with "osbaka_" ===
+		if strings.HasPrefix(tokenString, "osbaka_") {
+			keyHash := hashAPIKey(tokenString)
+			var apiKey model.APIKey
+			if err := getDB().Where("key_hash = ? AND is_active = ?", keyHash, true).First(&apiKey).Error; err != nil {
+				c.AbortWithStatusJSON(401, gin.H{"error": "Invalid or revoked API key"})
+				return
+			}
+			// Check expiration
+			if apiKey.ExpiresAt != nil && apiKey.ExpiresAt.Before(time.Now()) {
+				c.AbortWithStatusJSON(401, gin.H{"error": "API key has expired"})
+				return
+			}
+			// Update last used
+			now := time.Now()
+			getDB().Model(&apiKey).Update("last_used_at", now)
+
+			c.Set("userID", apiKey.CreatedBy)
+			c.Set("username", "apikey:"+apiKey.Name)
+			c.Set("role", apiKey.Role)
+			c.Next()
+			return
+		}
+
+		// === JWT path ===
 		// Parse and validate JWT
 		token, err := jwt.Parse(tokenString, func(token *jwt.Token) (interface{}, error) {
 			// Validate signing method
@@ -88,10 +119,15 @@ func AuthMiddleware(cfg *config.Config) gin.HandlerFunc {
 		}
 
 		username, _ := claims["name"].(string)
+		role, _ := claims["role"].(string)
+		if role == "" {
+			role = "operator" // backward compat for tokens without role
+		}
 
 		// Store in context for downstream handlers
 		c.Set("userID", userID)
 		c.Set("username", username)
+		c.Set("role", role)
 
 		c.Next()
 	}
@@ -112,6 +148,36 @@ func GetAuthUsername(c *gin.Context) string {
 	val, _ := c.Get("username")
 	s, _ := val.(string)
 	return s
+}
+
+// GetAuthRole extracts the authenticated user's role from the gin context.
+func GetAuthRole(c *gin.Context) string {
+	val, _ := c.Get("role")
+	s, _ := val.(string)
+	if s == "" {
+		return "operator"
+	}
+	return s
+}
+
+// RequireRole creates a Gin middleware that restricts access to specific roles.
+// Example: RequireRole("admin") allows only admins.
+// Example: RequireRole("admin", "operator") allows admins and operators.
+func RequireRole(allowedRoles ...string) gin.HandlerFunc {
+	allowed := make(map[string]bool, len(allowedRoles))
+	for _, r := range allowedRoles {
+		allowed[r] = true
+	}
+	return func(c *gin.Context) {
+		role := GetAuthRole(c)
+		if !allowed[role] {
+			c.AbortWithStatusJSON(http.StatusForbidden, gin.H{
+				"error": fmt.Sprintf("Access denied: role '%s' is not authorized for this action", role),
+			})
+			return
+		}
+		c.Next()
+	}
 }
 
 // ========= Error Response =========

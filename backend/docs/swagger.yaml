@@ -1,5 +1,44 @@
 basePath: /api/v1
 definitions:
+  api.BulkIDsRequest:
+    properties:
+      ids:
+        items:
+          type: integer
+        minItems: 1
+        type: array
+    required:
+    - ids
+    type: object
+  api.ChangePasswordRequest:
+    properties:
+      new_password:
+        minLength: 6
+        type: string
+      old_password:
+        type: string
+    required:
+    - new_password
+    type: object
+  api.CreateUserRequest:
+    properties:
+      email:
+        type: string
+      full_name:
+        type: string
+      password:
+        minLength: 6
+        type: string
+      role:
+        description: admin, operator, auditor
+        type: string
+      username:
+        type: string
+    required:
+    - email
+    - password
+    - username
+    type: object
   api.LoginRequest:
     properties:
       password:
@@ -10,25 +49,190 @@ definitions:
     - password
     - username
     type: object
+  api.PowerActionRequest:
+    properties:
+      action:
+        description: on, off, reset, cycle, status
+        type: string
+    required:
+    - action
+    type: object
+  api.UpdateUserRequest:
+    properties:
+      email:
+        type: string
+      full_name:
+        type: string
+      role:
+        type: string
+    type: object
+  api.UserView:
+    properties:
+      email:
+        type: string
+      full_name:
+        type: string
+      id:
+        type: integer
+      role:
+        type: string
+      username:
+        type: string
+    type: object
+  model.BootAsset:
+    properties:
+      checksum:
+        description: SHA256
+        type: string
+      created_at:
+        type: string
+      file_name:
+        description: Actual file name on disk
+        type: string
+      id:
+        type: integer
+      name:
+        description: Display name
+        type: string
+      path:
+        description: Relative path in tftpboot
+        type: string
+      size:
+        type: integer
+      type:
+        description: kernel, initrd, bootloader, other
+        type: string
+      updated_at:
+        type: string
+    type: object
+  model.DHCPConfig:
+    properties:
+      boot_file:
+        description: PXE boot file
+        type: string
+      boot_server_ip:
+        description: IP address for HTTP boot (API/Nginx)
+        type: string
+      created_at:
+        type: string
+      dns_server:
+        description: DNS server
+        type: string
+      domain:
+        description: Domain name
+        type: string
+      enable_pxe:
+        description: Enable PXE boot
+        type: boolean
+      gateway:
+        description: Default gateway
+        type: string
+      id:
+        type: integer
+      interface:
+        description: Network interface
+        type: string
+      is_active:
+        description: Is this the active configuration
+        type: boolean
+      kernel_params:
+        description: Kernel parameters for PXE boot
+        type: string
+      lease_time:
+        description: DHCP lease time
+        type: string
+      mirror_url:
+        description: OS mirror URL (e.g., http://archive.ubuntu.com/ubuntu)
+        type: string
+      name:
+        description: Configuration profile name
+        type: string
+      next_server:
+        description: Next server IP (usually same as TFTP)
+        type: string
+      range_end:
+        description: DHCP range end IP
+        type: string
+      range_start:
+        description: DHCP range start IP
+        type: string
+      subnet_mask:
+        type: string
+      tftp_server:
+        description: TFTP server IP (for PXE)
+        type: string
+      updated_at:
+        type: string
+    type: object
+  model.DHCPReservation:
+    properties:
+      created_at:
+        type: string
+      description:
+        description: Optional description
+        type: string
+      hostname:
+        description: Hostname to assign
+        type: string
+      id:
+        type: integer
+      ip_address:
+        description: Reserved IP address
+        type: string
+      is_active:
+        description: Is reservation active
+        type: boolean
+      mac_address:
+        description: Client MAC address
+        type: string
+      updated_at:
+        type: string
+    type: object
+  model.NodeGroup:
+    properties:
+      color:
+        description: hex color for UI display
+        type: string
+      created_at:
+        type: string
+      description:
+        type: string
+      id:
+        type: integer
+      name:
+        type: string
+      updated_at:
+        type: string
+    type: object
+  sysutil.NetworkInterface:
+    properties:
+      flags:
+        items:
+          type: string
+        type: array
+      ip_addresses:
+        items:
+          type: string
+        type: array
+      mac_address:
+        type: string
+      name:
+        type: string
+    type: object
 host: localhost:8000
 info:
   contact:
-    email: support@swagger.io
-    name: API Support
-    url: http://www.swagger.io/support
-  description: PXE Service and Asset Management System API.
+    name: OS Baka Project
+    url: https://github.com/os-baka
+  description: PXE Boot Provisioning and Node Management System API.
   license:
-    name: Apache 2.0
-    url: http://www.apache.org/licenses/LICENSE-2.0.html
-  termsOfService: http://swagger.io/terms/
+    name: MIT
   title: OS Baka API
-  version: 0.1.0
+  version: 1.0.0
 paths:
-  /assets:
+  /api-keys:
     get:
-      consumes:
-      - application/json
-      description: Get a list of all registered server nodes
+      description: List all API keys (hashes are never exposed)
       produces:
       - application/json
       responses:
@@ -39,9 +243,177 @@ paths:
             type: object
       security:
       - BearerAuth: []
-      summary: List all assets
+      summary: List API keys
+      tags:
+      - apikeys
+    post:
+      consumes:
+      - application/json
+      description: Create a new API key. The full key is only returned once.
+      parameters:
+      - description: API key details
+        in: body
+        name: body
+        required: true
+        schema:
+          type: object
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Create a new API key
+      tags:
+      - apikeys
+  /api-keys/{id}:
+    delete:
+      description: Deactivate an API key
+      parameters:
+      - description: API Key ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Revoke an API key
+      tags:
+      - apikeys
+  /api-keys/{id}/rotate:
+    post:
+      description: Generate a new key value for an existing API key. Old key is invalidated.
+      parameters:
+      - description: API Key ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Rotate an API key
+      tags:
+      - apikeys
+  /assets/boot:
+    get:
+      consumes:
+      - application/json
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: List all boot assets
       tags:
       - assets
+    post:
+      consumes:
+      - multipart/form-data
+      parameters:
+      - description: File to upload
+        in: formData
+        name: file
+        required: true
+        type: file
+      - description: Asset type (kernel, initrd, etc)
+        in: formData
+        name: type
+        required: true
+        type: string
+      - description: Display name
+        in: formData
+        name: name
+        type: string
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/model.BootAsset'
+      security:
+      - BearerAuth: []
+      summary: Upload a new boot asset
+      tags:
+      - assets
+  /assets/boot/{id}:
+    delete:
+      consumes:
+      - application/json
+      parameters:
+      - description: Asset ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Delete a boot asset
+      tags:
+      - assets
+  /audit-logs:
+    get:
+      description: Returns paginated audit log entries, newest first
+      parameters:
+      - description: Page number (default 1)
+        in: query
+        name: page
+        type: integer
+      - description: Items per page (default 50, max 200)
+        in: query
+        name: limit
+        type: integer
+      - description: Filter by action prefix (e.g. node, user, dhcp)
+        in: query
+        name: action
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: List audit logs
+      tags:
+      - audit
   /auth/login:
     post:
       consumes:
@@ -96,6 +468,908 @@ paths:
       summary: Get current user
       tags:
       - auth
+  /dashboard/summary:
+    get:
+      description: Aggregated statistics for the dashboard overview
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Dashboard summary
+      tags:
+      - dashboard
+  /dhcp/config/active:
+    get:
+      consumes:
+      - application/json
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/model.DHCPConfig'
+      security:
+      - BearerAuth: []
+      summary: Get the active DHCP configuration
+      tags:
+      - dhcp
+  /dhcp/configs:
+    get:
+      consumes:
+      - application/json
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: List all DHCP configurations
+      tags:
+      - dhcp
+    post:
+      consumes:
+      - application/json
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/model.DHCPConfig'
+      security:
+      - BearerAuth: []
+      summary: Create a new DHCP configuration
+      tags:
+      - dhcp
+  /dhcp/configs/{id}:
+    delete:
+      consumes:
+      - application/json
+      parameters:
+      - description: Config ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Delete a DHCP configuration
+      tags:
+      - dhcp
+    get:
+      consumes:
+      - application/json
+      parameters:
+      - description: Config ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/model.DHCPConfig'
+      security:
+      - BearerAuth: []
+      summary: Get a DHCP configuration by ID
+      tags:
+      - dhcp
+    put:
+      consumes:
+      - application/json
+      parameters:
+      - description: Config ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/model.DHCPConfig'
+      security:
+      - BearerAuth: []
+      summary: Update a DHCP configuration
+      tags:
+      - dhcp
+  /dhcp/reservations:
+    get:
+      consumes:
+      - application/json
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: List all DHCP reservations
+      tags:
+      - dhcp
+    post:
+      consumes:
+      - application/json
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/model.DHCPReservation'
+      security:
+      - BearerAuth: []
+      summary: Create a DHCP reservation
+      tags:
+      - dhcp
+  /dhcp/reservations/{id}:
+    delete:
+      consumes:
+      - application/json
+      parameters:
+      - description: Reservation ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Delete a DHCP reservation
+      tags:
+      - dhcp
+    put:
+      consumes:
+      - application/json
+      parameters:
+      - description: Reservation ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/model.DHCPReservation'
+      security:
+      - BearerAuth: []
+      summary: Update a DHCP reservation
+      tags:
+      - dhcp
+  /dhcp/reservations/sync:
+    post:
+      consumes:
+      - application/json
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Sync DHCP reservations from registered nodes
+      tags:
+      - dhcp
+  /dhcp/service/restart:
+    post:
+      consumes:
+      - application/json
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Restart the DHCP service (regenerate config)
+      tags:
+      - dhcp
+  /groups:
+    get:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: List all node groups
+      tags:
+      - groups
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: Group details
+        in: body
+        name: group
+        required: true
+        schema:
+          type: object
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/model.NodeGroup'
+      security:
+      - BearerAuth: []
+      summary: Create a node group
+      tags:
+      - groups
+  /groups/{id}:
+    delete:
+      parameters:
+      - description: Group ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Delete a node group
+      tags:
+      - groups
+    put:
+      consumes:
+      - application/json
+      parameters:
+      - description: Group ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: Group details
+        in: body
+        name: group
+        required: true
+        schema:
+          type: object
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/model.NodeGroup'
+      security:
+      - BearerAuth: []
+      summary: Update a node group
+      tags:
+      - groups
+  /internal/nodes/{id}/heartbeat:
+    post:
+      consumes:
+      - application/json
+      description: Called by node agents to report health status. Internal API.
+      parameters:
+      - description: Node ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: Health metrics
+        in: body
+        name: body
+        required: true
+        schema:
+          type: object
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: Report node heartbeat
+      tags:
+      - internal
+  /internal/nodes/{id}/status:
+    put:
+      consumes:
+      - application/json
+      description: Update the status of a node (internal API)
+      parameters:
+      - description: Node ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: Status update
+        in: body
+        name: body
+        required: true
+        schema:
+          type: object
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      summary: Update node status
+      tags:
+      - internal
+  /nodes:
+    get:
+      consumes:
+      - application/json
+      description: Get a list of all registered server nodes
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: List all assets
+      tags:
+      - assets
+  /nodes/{id}/group:
+    put:
+      consumes:
+      - application/json
+      parameters:
+      - description: Node ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: Group assignment
+        in: body
+        name: body
+        required: true
+        schema:
+          type: object
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Assign a node to a group
+      tags:
+      - groups
+  /nodes/{id}/ipmi/test:
+    get:
+      description: Test if the node's IPMI/BMC is reachable and credentials are valid
+      parameters:
+      - description: Node ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Test IPMI connectivity
+      tags:
+      - ipmi
+  /nodes/{id}/power:
+    post:
+      consumes:
+      - application/json
+      description: Send a power command (on/off/reset/cycle/status) to a node via
+        IPMI
+      parameters:
+      - description: Node ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: Power action
+        in: body
+        name: action
+        required: true
+        schema:
+          $ref: '#/definitions/api.PowerActionRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Execute IPMI power action
+      tags:
+      - ipmi
+  /nodes/{id}/rebuild:
+    post:
+      consumes:
+      - application/json
+      description: Set node status to 'installing' to trigger reinstallation on next
+        boot
+      parameters:
+      - description: Node ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Rebuild a node
+      tags:
+      - assets
+  /nodes/{id}/rotate-passphrase:
+    post:
+      description: Generate a new passphrase, store it in the secret store, and return
+        it
+      parameters:
+      - description: Node ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "404":
+          description: Not Found
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Rotate node encryption passphrase
+      tags:
+      - assets
+  /nodes/{id}/tags:
+    get:
+      parameters:
+      - description: Node ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: List tags for a node
+      tags:
+      - tags
+    put:
+      consumes:
+      - application/json
+      parameters:
+      - description: Node ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: Tags to set
+        in: body
+        name: tags
+        required: true
+        schema:
+          type: object
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Set tags for a node (replaces all existing tags)
+      tags:
+      - tags
+  /nodes/bulk/delete:
+    post:
+      consumes:
+      - application/json
+      description: Delete multiple nodes and their DHCP reservations
+      parameters:
+      - description: Node IDs to delete
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/api.BulkIDsRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Bulk delete nodes
+      tags:
+      - bulk
+  /nodes/bulk/group:
+    put:
+      consumes:
+      - application/json
+      description: Assign multiple nodes to a group (or unassign by passing null group_id)
+      parameters:
+      - description: Node IDs and group ID
+        in: body
+        name: body
+        required: true
+        schema:
+          type: object
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Bulk assign nodes to a group
+      tags:
+      - bulk
+  /nodes/bulk/rebuild:
+    post:
+      consumes:
+      - application/json
+      description: Set multiple nodes to 'installing' status for reinstallation
+      parameters:
+      - description: Node IDs to rebuild
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/api.BulkIDsRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Bulk rebuild nodes
+      tags:
+      - bulk
+  /pxe/boot/{mac}:
+    get:
+      description: Returns an iPXE script based on the node's MAC address
+      parameters:
+      - description: MAC Address
+        in: path
+        name: mac
+        required: true
+        type: string
+      produces:
+      - text/plain
+      responses:
+        "200":
+          description: iPXE script
+          schema:
+            type: string
+      summary: Get iPXE boot script for a node
+      tags:
+      - pxe
+  /pxe/init:
+    get:
+      description: Returns a static iPXE script that chains to the dynamic boot script
+        using iPXE variables
+      produces:
+      - text/plain
+      responses:
+        "200":
+          description: iPXE init script
+          schema:
+            type: string
+      summary: Get initial iPXE chainloader script
+      tags:
+      - pxe
+  /pxe/postinstall/{mac}:
+    get:
+      description: Returns a script to run after OS installation
+      parameters:
+      - description: MAC Address
+        in: path
+        name: mac
+        required: true
+        type: string
+      produces:
+      - text/plain
+      responses:
+        "200":
+          description: Post-install script
+          schema:
+            type: string
+      summary: Get post-installation script
+      tags:
+      - pxe
+  /pxe/preseed/{mac}:
+    get:
+      description: Returns a preseed file for automated installation
+      parameters:
+      - description: MAC Address
+        in: path
+        name: mac
+        required: true
+        type: string
+      produces:
+      - text/plain
+      responses:
+        "200":
+          description: Preseed configuration
+          schema:
+            type: string
+      summary: Get Preseed configuration for Debian/Ubuntu
+      tags:
+      - pxe
+  /system/interfaces:
+    get:
+      consumes:
+      - application/json
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/sysutil.NetworkInterface'
+            type: array
+      security:
+      - BearerAuth: []
+      summary: List network interfaces on the server
+      tags:
+      - system
+  /users:
+    get:
+      description: Returns all registered users (admin only)
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: List all users
+      tags:
+      - users
+    post:
+      consumes:
+      - application/json
+      description: Create a new user with the given credentials (admin only)
+      parameters:
+      - description: User details
+        in: body
+        name: user
+        required: true
+        schema:
+          $ref: '#/definitions/api.CreateUserRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/api.UserView'
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "409":
+          description: Conflict
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Create a new user
+      tags:
+      - users
+  /users/{id}:
+    delete:
+      description: Delete a user (admin only, cannot delete self)
+      parameters:
+      - description: User ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Delete a user
+      tags:
+      - users
+    put:
+      consumes:
+      - application/json
+      description: Update user details (admin only, or self for non-privileged fields)
+      parameters:
+      - description: User ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: Fields to update
+        in: body
+        name: user
+        required: true
+        schema:
+          $ref: '#/definitions/api.UpdateUserRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/api.UserView'
+      security:
+      - BearerAuth: []
+      summary: Update a user
+      tags:
+      - users
+  /users/{id}/password:
+    put:
+      consumes:
+      - application/json
+      description: Change password for a user. Admins can change any user's password
+        without providing old password.
+      parameters:
+      - description: User ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: Password change request
+        in: body
+        name: passwords
+        required: true
+        schema:
+          $ref: '#/definitions/api.ChangePasswordRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Change user password
+      tags:
+      - users
+  /ws/ssh:
+    get:
+      description: WebSocket endpoint for interactive SSH sessions
+      parameters:
+      - description: JWT token (optional, for browser clients that cannot set headers)
+        in: query
+        name: token
+        type: string
+      responses: {}
+      summary: SSH WebSocket proxy
+      tags:
+      - websocket
 securityDefinitions:
   BearerAuth:
     in: header

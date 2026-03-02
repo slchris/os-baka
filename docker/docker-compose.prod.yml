@@ -1,10 +1,11 @@
 # Production deployment — copy .env.example to .env and configure before running
+# Usage: docker compose -f docker-compose.prod.yml up -d
 services:
   # PostgreSQL Database
   db:
     image: hub.infra.plz.ac/library/postgres:15-alpine
     container_name: osbaka-db
-    restart: always
+    restart: unless-stopped
     environment:
       POSTGRES_DB: osbaka
       POSTGRES_USER: osbaka
@@ -16,6 +17,19 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
+      start_period: 30s
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+          cpus: '1.0'
+        reservations:
+          memory: 128M
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
 
   # Backend API
   backend:
@@ -24,19 +38,42 @@ services:
       dockerfile: Dockerfile
     image: osbaka-backend:latest
     container_name: osbaka-backend
-    restart: always
+    restart: unless-stopped
     environment:
       DATABASE_URL: postgresql://osbaka:${POSTGRES_PASSWORD:-changeme}@db:5432/osbaka
       SECRET_KEY: ${SECRET_KEY:?Set SECRET_KEY in .env file}
       ADMIN_PASSWORD: ${ADMIN_PASSWORD:-admin}
       BACKEND_URL: http://backend:8000
       EXTERNAL_IP: ${EXTERNAL_IP:-10.31.0.3}
+      GIN_MODE: release
+      # Vault integration (uncomment to enable)
+      # VAULT_ENABLED: "true"
+      # VAULT_ADDR: "http://vault:8200"
+      # VAULT_TOKEN: "${VAULT_TOKEN}"
     volumes:
       - dnsmasq_config:/etc/dnsmasq.d
       - pxe_assets:/tftpboot
     depends_on:
       db:
         condition: service_healthy
+    healthcheck:
+      test: [ "CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8000/api/v1/ping" ]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+          cpus: '1.0'
+        reservations:
+          memory: 64M
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "5"
 
   # PXE Service (DHCP + TFTP)
   pxe:
@@ -45,7 +82,7 @@ services:
       dockerfile: Dockerfile
     image: osbaka-pxe:latest
     container_name: osbaka-pxe
-    restart: always
+    restart: unless-stopped
     network_mode: host # Required for DHCP to work properly
     cap_add:
       - NET_ADMIN
@@ -53,7 +90,26 @@ services:
       - dnsmasq_config:/etc/dnsmasq.d
       - pxe_assets:/tftpboot
     depends_on:
-      - backend
+      backend:
+        condition: service_healthy
+    healthcheck:
+      test: [ "CMD", "pgrep", "dnsmasq" ]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+    deploy:
+      resources:
+        limits:
+          memory: 128M
+          cpus: '0.5'
+        reservations:
+          memory: 32M
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
 
   # Frontend (Nginx)
   frontend:
@@ -64,11 +120,30 @@ services:
         VITE_API_URL: /api/v1
     image: osbaka-frontend:latest
     container_name: osbaka-frontend
-    restart: always
+    restart: unless-stopped
     ports:
-      - "80:80"
+      - "${FRONTEND_PORT:-80}:80"
     depends_on:
-      - backend
+      backend:
+        condition: service_healthy
+    healthcheck:
+      test: [ "CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:80/" ]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 5s
+    deploy:
+      resources:
+        limits:
+          memory: 128M
+          cpus: '0.5'
+        reservations:
+          memory: 32M
+    logging:
+      driver: json-file
+      options:
+        max-size: "5m"
+        max-file: "3"
 
 volumes:
   postgres_data:

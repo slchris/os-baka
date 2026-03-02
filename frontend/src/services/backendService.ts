@@ -10,6 +10,7 @@ import {
   NodesApi,
   DashboardApi,
   NotificationsApi,
+  UsersApi,
   mapApiError,
   type NodeView,
   type MeResponse,
@@ -128,31 +129,30 @@ export const BackendService = {
   },
 
   // ==================== Users ====================
-  // Note: Backend doesn't have a /users endpoint yet, keeping mock for now
-  // TODO: Add backend /users API or integrate with /auth/me for current user only
 
-  getUsers: (): User[] => {
-    // Mock users for now (UI expects list of users for admin panel)
-    return [
-      {
-        id: 'u-admin',
-        name: 'System Administrator',
-        email: 'admin@os-baka.local',
-        role: Role.ADMIN,
-        avatarUrl: 'https://api.dicebear.com/7.x/avataaars/svg?seed=Felix',
-      },
-      {
-        id: 'u-op1',
-        name: 'Sarah Operator',
-        email: 'sarah@os-baka.local',
-        role: Role.OPERATOR,
-        avatarUrl: 'https://api.dicebear.com/7.x/avataaars/svg?seed=Sarah',
-      },
-    ];
+  getUsers: async (): Promise<User[]> => {
+    try {
+      const resp = await UsersApi.list();
+      return resp.items.map((u) => ({
+        id: String(u.id),
+        name: u.full_name || u.username,
+        email: u.email,
+        role: u.role === 'admin' ? Role.ADMIN : u.role === 'auditor' ? Role.AUDITOR : Role.OPERATOR,
+        avatarUrl: `https://api.dicebear.com/7.x/avataaars/svg?seed=${u.username}`,
+      }));
+    } catch (error) {
+      console.error('[BackendService] Failed to fetch users:', mapApiError(error));
+      return [];
+    }
   },
 
-  updateUserRole: (userId: string, newRole: Role): User[] => {
-    // Mock implementation - TODO: Add backend API
+  updateUserRole: async (userId: string, newRole: Role): Promise<User[]> => {
+    try {
+      const roleStr = newRole === Role.ADMIN ? 'admin' : newRole === Role.AUDITOR ? 'auditor' : 'operator';
+      await UsersApi.update(parseInt(userId, 10), { role: roleStr });
+    } catch (error) {
+      console.error('[BackendService] Failed to update user role:', mapApiError(error));
+    }
     return BackendService.getUsers();
   },
 
@@ -223,25 +223,7 @@ export const BackendService = {
       return await NotificationsApi.list();
     } catch (error) {
       console.error('[BackendService] Failed to fetch notifications:', mapApiError(error));
-      // Fallback to mock if backend not ready
-      return [
-        {
-          id: '1',
-          title: 'System Update Available',
-          message: 'A new kernel patch (v6.1.0) is available for deployment.',
-          type: 'info',
-          timestamp: '10 mins ago',
-          read: false,
-        },
-        {
-          id: '2',
-          title: 'Node Offline Detected',
-          message: 'worker-prod-02 has failed 3 consecutive health checks.',
-          type: 'error',
-          timestamp: '1 hour ago',
-          read: false,
-        },
-      ];
+      return [];
     }
   },
 
@@ -324,19 +306,12 @@ export const BackendService = {
   },
 
   regenerateRecoveryKey: async (nodeId: string): Promise<string> => {
-    // TODO: This should call backend API to regenerate key on server side
-    // For now, generate locally and return passphrase
-    const charset = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!@#$%^&*()-_=+';
-    let passphrase = '';
-    const values = new Uint32Array(32);
-    crypto.getRandomValues(values);
-    for (let i = 0; i < 32; i++) {
-      passphrase += charset[values[i] % charset.length];
+    try {
+      const res = await NodesApi.rotatePassphrase(parseInt(nodeId));
+      return res.passphrase;
+    } catch (error) {
+      console.error('[BackendService] Failed to rotate passphrase:', mapApiError(error));
+      throw error;
     }
-
-    // Update node to mark key as rotated (would need backend API)
-    console.warn('[BackendService] regenerateRecoveryKey - backend integration pending');
-
-    return passphrase;
   },
 };

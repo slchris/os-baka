@@ -10,15 +10,14 @@ WORKDIR /tftpboot
 ARG IPXE_ASSET_DIR=/tmp/ipxe
 COPY ipxe/ ${IPXE_ASSET_DIR}/
 RUN set -e; \
-        for f in undionly.kpxe ipxe.efi snponly.efi wimboot; do \
-            if [ -f "${IPXE_ASSET_DIR}/$f" ]; then cp "${IPXE_ASSET_DIR}/$f" "/tftpboot/$f"; \
-            else \
-                url="https://boot.ipxe.org/$f"; \
-                [ "$f" = "wimboot" ] && url="https://github.com/ipxe/wimboot/releases/latest/download/wimboot"; \
-                echo "Downloading $f from $url"; \
-                curl -fL -o "/tftpboot/$f" "$url"; \
-            fi; \
-        done
+    for f in undionly.kpxe ipxe.efi snponly.efi; do \
+    if [ -f "${IPXE_ASSET_DIR}/$f" ]; then cp "${IPXE_ASSET_DIR}/$f" "/tftpboot/$f"; \
+    else \
+    url="https://boot.ipxe.org/$f"; \
+    echo "Downloading $f from $url"; \
+    curl -fL -o "/tftpboot/$f" "$url"; \
+    fi; \
+    done
 
 # Copy configuration
 COPY dnsmasq.conf /etc/dnsmasq.conf
