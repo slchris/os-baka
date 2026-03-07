@@ -97,6 +97,25 @@ func Load() *Config {
 		cfg.Vault.Token = vaultToken
 	}
 
+	// ── Security: validate JWT secret strength ──
+	const minSecretLen = 32
+	isProduction := cfg.Server.Mode == "release"
+	if len(cfg.Server.SecretKey) < minSecretLen {
+		if isProduction {
+			slog.Error("JWT secret key is too short for production",
+				"min_length", minSecretLen,
+				"actual_length", len(cfg.Server.SecretKey))
+			os.Exit(1)
+		}
+		slog.Warn("JWT secret key is too short, use at least 32 characters in production",
+			"min_length", minSecretLen,
+			"actual_length", len(cfg.Server.SecretKey))
+	}
+	if cfg.Server.SecretKey == "change-this-in-production" && isProduction {
+		slog.Error("Default JWT secret key detected in production mode, aborting")
+		os.Exit(1)
+	}
+
 	return cfg
 }
 

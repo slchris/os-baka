@@ -1,6 +1,7 @@
 import React from 'react';
 import { createBrowserRouter, Navigate } from 'react-router-dom';
 import App from './App';
+import ErrorBoundary from './components/ErrorBoundary';
 import { Login } from './pages/Login';
 import { Dashboard } from './pages/Dashboard';
 import { Nodes } from './pages/Nodes';
@@ -42,9 +43,11 @@ export const router = createBrowserRouter([
   {
     path: '/',
     element: (
-      <ProtectedRoute>
-        <App />
-      </ProtectedRoute>
+      <ErrorBoundary>
+        <ProtectedRoute>
+          <App />
+        </ProtectedRoute>
+      </ErrorBoundary>
     ),
     children: [
       {

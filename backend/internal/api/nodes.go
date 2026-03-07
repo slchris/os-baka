@@ -31,13 +31,62 @@ func NewNodeHandler() *NodeHandler {
 // @Success      200  {object} map[string]interface{}
 // @Router       /nodes [get]
 func (h *NodeHandler) ListNodes(c *gin.Context) {
-	var nodes []model.Node
-	getDB().Find(&nodes)
+	// ── Pagination params ──
+	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
+	pageSize, _ := strconv.Atoi(c.DefaultQuery("page_size", "50"))
+	search := c.Query("search")
+	status := c.Query("status")
+	sortParam := c.DefaultQuery("sort", "-created_at")
 
-	// Map to frontend expectation if needed, or return raw
-	// Frontend expects: id, hostname, mac_address, ip_address, status, ...
-	// GORM field names match JSON defaults loosely, but might need explicit tags if camelCase is strict
-	// Gin Gonic JSON serializer usually handles struct fields well enough.
+	if page < 1 {
+		page = 1
+	}
+	if pageSize < 1 || pageSize > 200 {
+		pageSize = 50
+	}
+
+	db := getDB().Model(&model.Node{})
+
+	// ── Search filter (hostname, IP, MAC) ──
+	if search != "" {
+		like := "%" + search + "%"
+		db = db.Where("hostname ILIKE ? OR ip_address ILIKE ? OR mac_address ILIKE ?", like, like, like)
+	}
+
+	// ── Status filter ──
+	if status != "" {
+		db = db.Where("status = ?", status)
+	}
+
+	// ── Count total before pagination ──
+	var total int64
+	db.Count(&total)
+
+	// ── Sort ──
+	allowedSorts := map[string]string{
+		"hostname": "hostname", "ip_address": "ip_address",
+		"status": "status", "created_at": "created_at", "updated_at": "updated_at",
+	}
+	orderClause := "created_at DESC"
+	if sortParam != "" {
+		desc := false
+		field := sortParam
+		if strings.HasPrefix(field, "-") {
+			desc = true
+			field = field[1:]
+		}
+		if col, ok := allowedSorts[field]; ok {
+			orderClause = col
+			if desc {
+				orderClause += " DESC"
+			}
+		}
+	}
+
+	// ── Fetch page ──
+	offset := (page - 1) * pageSize
+	var nodes []model.Node
+	db.Order(orderClause).Offset(offset).Limit(pageSize).Find(&nodes)
 
 	type NodeView struct {
 		ID                uint   `json:"id"`
@@ -60,32 +109,34 @@ func (h *NodeHandler) ListNodes(c *gin.Context) {
 		UpdatedAt         string `json:"updated_at"`
 	}
 
-	response := []NodeView{}
+	response := make([]NodeView, 0, len(nodes))
 	for _, n := range nodes {
-		slog.Debug("Node status from DB", "id", n.ID, "hostname", n.Hostname, "status", n.Status)
 		response = append(response, NodeView{
-			ID:                n.ID,
-			Hostname:          n.Hostname,
-			IPAddress:         n.IPAddress,
-			MACAddress:        n.MACAddress,
-			AssetTag:          n.AssetTag,
-			SSHEnabled:        n.SSHEnabled,
-			SSHRootLogin:      n.SSHRootLogin,
-			Status:            n.Status,
-			OSType:            n.OSType,
-			OSVersion:         n.OSVersion,
-			MirrorURL:         n.MirrorURL,
-			Timezone:          n.Timezone,
+			ID: n.ID, Hostname: n.Hostname, IPAddress: n.IPAddress,
+			MACAddress: n.MACAddress, AssetTag: n.AssetTag,
+			SSHEnabled: n.SSHEnabled, SSHRootLogin: n.SSHRootLogin,
+			Status: n.Status, OSType: n.OSType, OSVersion: n.OSVersion,
+			MirrorURL: n.MirrorURL, Timezone: n.Timezone,
 			EncryptionEnabled: n.EncryptionEnabled,
 			CreatedAt:         n.CreatedAt.Format(time.RFC3339),
 			UpdatedAt:         n.UpdatedAt.Format(time.RFC3339),
-			TPMEnabled:        n.TPMEnabled,
-			USBKeyRequired:    n.USBKeyRequired,
-			PCRBinding:        n.PCRBinding,
+			TPMEnabled:        n.TPMEnabled, USBKeyRequired: n.USBKeyRequired,
+			PCRBinding: n.PCRBinding,
 		})
 	}
 
-	c.JSON(http.StatusOK, gin.H{"items": response, "total": len(response)})
+	totalPages := int(total) / pageSize
+	if int(total)%pageSize > 0 {
+		totalPages++
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"items":       response,
+		"total":       total,
+		"page":        page,
+		"page_size":   pageSize,
+		"total_pages": totalPages,
+	})
 }
 
 func (h *NodeHandler) CreateNode(c *gin.Context) {
@@ -162,6 +213,10 @@ func (h *NodeHandler) CreateNode(c *gin.Context) {
 		USBKeyRequired:       req.USBKeyRequired,
 		PCRBinding:           req.PCRBinding,
 	}
+
+	// Encrypt sensitive fields before storage
+	node.IPMIPassword = EncryptField(node.IPMIPassword)
+	node.RootPassword = EncryptField(node.RootPassword)
 
 	if result := getDB().Create(&node); result.Error != nil {
 		ErrorResponse(c, http.StatusInternalServerError, result.Error.Error())
@@ -258,8 +313,13 @@ func (h *NodeHandler) UpdateNode(c *gin.Context) {
 	if req.Timezone != nil {
 		node.Timezone = *req.Timezone
 	}
-	if req.RootPassword != nil {
-		node.RootPassword = *req.RootPassword
+	if req.RootPassword != nil && *req.RootPassword != "" {
+		hashed, err := bcrypt.GenerateFromPassword([]byte(*req.RootPassword), 10)
+		if err != nil {
+			ErrorResponse(c, http.StatusInternalServerError, "Failed to hash root password")
+			return
+		}
+		node.RootPassword = string(hashed)
 	}
 	if req.SSHEnabled != nil {
 		node.SSHEnabled = *req.SSHEnabled

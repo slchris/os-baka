@@ -2,6 +2,7 @@ package api
 
 import (
 	"fmt"
+	"log/slog"
 	"net/http"
 	"net/url"
 	"os"
@@ -266,6 +267,15 @@ func (h *PXEHandler) Preseed(c *gin.Context) {
 	var node model.Node
 	if result := getDB().Where("LOWER(mac_address) = ?", mac).First(&node); result.Error != nil {
 		c.String(http.StatusNotFound, "# Node not found")
+		return
+	}
+
+	// Security: only serve preseed to nodes that are actively provisioning.
+	// This prevents information disclosure for nodes that are already active.
+	if node.Status != "installing" && node.Status != "pending" {
+		slog.Warn("Preseed requested for non-provisioning node",
+			"mac", mac, "status", node.Status, "remote_addr", c.ClientIP())
+		c.String(http.StatusForbidden, "# Node is not in provisioning state")
 		return
 	}
 

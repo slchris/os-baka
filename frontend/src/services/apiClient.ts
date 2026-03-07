@@ -131,6 +131,9 @@ export interface NodeView {
 export interface NodeListResponse {
   items: NodeView[];
   total: number;
+  page?: number;
+  page_size?: number;
+  total_pages?: number;
 }
 
 export interface NodeCreateRequest {
@@ -173,7 +176,7 @@ export interface NodeUpdateRequest {
 }
 
 export const NodesApi = {
-  async list(params?: { skip?: number; limit?: number; status?: string }): Promise<NodeListResponse> {
+  async list(params?: Record<string, string | number | undefined>): Promise<NodeListResponse> {
     const res = await httpClient.get<NodeListResponse>('/nodes', { params });
     return res.data;
   },

@@ -1,15 +1,23 @@
 
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { Upload, Plus, Bot, Filter, Save, X, Eye, EyeOff, Pencil, Zap, Loader2, CheckCircle2, AlertCircle, ChevronDown, Network, Laptop } from 'lucide-react';
 import { NodeConfig, NodeStatus, GeminiAnalysisResult, KeySlot } from '../types';
 import { analyzeCsvData } from '../services/geminiService';
 import { NodesApi, NodeCreateRequest } from '../services/apiClient';
 import { NodeTooltip } from '../components/NodeTooltip';
 import { NodeTable } from '../components/NodeTable';
+import { Pagination } from '../components/Pagination';
 
 export const Nodes: React.FC = () => {
   const [nodes, setNodes] = useState<NodeConfig[]>([]);
   const [filterStatus, setFilterStatus] = useState('ALL');
+  const [isLoading, setIsLoading] = useState(true);
+
+  // Pagination state
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(50);
+  const [totalItems, setTotalItems] = useState(0);
+  const [totalPages, setTotalPages] = useState(1);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
@@ -18,54 +26,56 @@ export const Nodes: React.FC = () => {
   // Load nodes on mount
   useEffect(() => {
     loadNodes();
-  }, []);
+  }, [page, pageSize, filterStatus]);
 
   // Auto-refresh nodes every 30 seconds
   useEffect(() => {
     const interval = setInterval(() => {
       loadNodes();
-    }, 30000); // 30 seconds
+    }, 30000);
 
     return () => clearInterval(interval);
-  }, []);
+  }, [page, pageSize, filterStatus]);
 
   const loadNodes = async () => {
+    setIsLoading(true);
     try {
-      const res = await NodesApi.list();
-      // Map backend response to frontend NodeConfig type
-      // The backend response is simpler than NodeConfig, so we map defaults
-      const mapped: NodeConfig[] = res.items.map(n => {
-        // Debug: log the status mapping
-        const originalStatus = n.status;
-        const mappedStatus = (n.status?.toUpperCase() as NodeStatus) || NodeStatus.PENDING;
-        console.log(`Node ${n.hostname}: ${originalStatus} -> ${mappedStatus}`);
-
-        return {
-          id: n.id.toString(),
-          hostname: n.hostname,
-          ipAddress: n.ip_address,
-          macAddress: n.mac_address,
-          status: mappedStatus,
-          provisioningMethod: 'PXE_MAC', // Backend doesn't store this explicitly yet, assuming PXE
-          encryption: {
-            enabled: n.encryption_enabled,
-            luksVersion: 'luks2',
-            tpmEnabled: n.tpm_enabled ?? true,
-            usbKeyRequired: n.usb_key_required ?? false,
-            pcrBinding: n.pcr_binding ? n.pcr_binding.split(',').filter(Boolean).map(x => parseInt(x, 10)).filter(x => !Number.isNaN(x)) : [7],
-            keySlots: []
-          },
-          lastSeen: n.last_seen || 'Never',
-          // ipmi: n.ipmi // Backend missing IPMI fields currently
-          osType: n.os_type || 'ubuntu',
-          osVersion: n.os_version || '12',
-          mirrorUrl: n.mirror_url || '',
-          timezone: n.timezone || 'UTC'
-        };
-      });
+      const params: Record<string, string> = {
+        page: String(page),
+        page_size: String(pageSize),
+      };
+      if (filterStatus !== 'ALL') {
+        params.status = filterStatus.toLowerCase();
+      }
+      const res = await NodesApi.list(params);
+      const mapped: NodeConfig[] = (res.items || []).map((n: any) => ({
+        id: n.id.toString(),
+        hostname: n.hostname,
+        ipAddress: n.ip_address,
+        macAddress: n.mac_address,
+        status: (n.status?.toUpperCase() as NodeStatus) || NodeStatus.PENDING,
+        provisioningMethod: 'PXE_MAC' as const,
+        encryption: {
+          enabled: n.encryption_enabled,
+          luksVersion: 'luks2',
+          tpmEnabled: n.tpm_enabled ?? true,
+          usbKeyRequired: n.usb_key_required ?? false,
+          pcrBinding: n.pcr_binding ? n.pcr_binding.split(',').filter(Boolean).map((x: string) => parseInt(x, 10)).filter((x: number) => !Number.isNaN(x)) : [7],
+          keySlots: []
+        },
+        lastSeen: n.last_seen || 'Never',
+        osType: n.os_type || 'ubuntu',
+        osVersion: n.os_version || '12',
+        mirrorUrl: n.mirror_url || '',
+        timezone: n.timezone || 'UTC'
+      }));
       setNodes(mapped);
+      setTotalItems(res.total || mapped.length);
+      setTotalPages(res.total_pages || 1);
     } catch (e) {
       console.error("Failed to load nodes", e);
+    } finally {
+      setIsLoading(false);
     }
   };
 
@@ -427,9 +437,8 @@ export const Nodes: React.FC = () => {
     }
   };
 
-  const filteredNodes = filterStatus === 'ALL'
-    ? nodes
-    : nodes.filter(node => node.status === filterStatus);
+  // Server-side filtering is now active; nodes are already filtered
+  const filteredNodes = nodes;
 
   return (
     <>
@@ -801,15 +810,33 @@ export const Nodes: React.FC = () => {
           </div>
         )}
 
-        <NodeTable
-          nodes={filteredNodes}
-          onEdit={handleEdit}
-          onRebuild={rebuildNode}
-          onDelete={handleDelete}
-          onDownloadPassphrase={handleDownloadPassphrase}
-          onNodeHover={handleNodeEnter}
-          onNodeLeave={() => setTooltipNode(null)}
-        />
+        {isLoading ? (
+          <div className="space-y-3">
+            {[...Array(5)].map((_, i) => (
+              <div key={i} className="h-16 bg-gray-100 dark:bg-gray-800 rounded-xl animate-pulse" />
+            ))}
+          </div>
+        ) : (
+          <>
+            <NodeTable
+              nodes={filteredNodes}
+              onEdit={handleEdit}
+              onRebuild={rebuildNode}
+              onDelete={handleDelete}
+              onDownloadPassphrase={handleDownloadPassphrase}
+              onNodeHover={handleNodeEnter}
+              onNodeLeave={() => setTooltipNode(null)}
+            />
+            <Pagination
+              page={page}
+              totalPages={totalPages}
+              total={totalItems}
+              pageSize={pageSize}
+              onPageChange={(p) => setPage(p)}
+              onPageSizeChange={(s) => { setPageSize(s); setPage(1); }}
+            />
+          </>
+        )}
       </div>
     </>
   );

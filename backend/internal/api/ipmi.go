@@ -77,8 +77,9 @@ func (h *IPMIHandler) PowerAction(c *gin.Context) {
 		"-U", node.IPMIUsername,
 	}
 
-	if node.IPMIPassword != "" {
-		args = append(args, "-P", node.IPMIPassword)
+	ipmiPassword := DecryptField(node.IPMIPassword)
+	if ipmiPassword != "" {
+		args = append(args, "-P", ipmiPassword)
 	}
 
 	if node.IPMIAllowUntrusted {
@@ -148,8 +149,9 @@ func (h *IPMIHandler) TestIPMI(c *gin.Context) {
 		"-H", node.IPMIAddress,
 		"-U", node.IPMIUsername,
 	}
-	if node.IPMIPassword != "" {
-		args = append(args, "-P", node.IPMIPassword)
+	ipmiPassword := DecryptField(node.IPMIPassword)
+	if ipmiPassword != "" {
+		args = append(args, "-P", ipmiPassword)
 	}
 	args = append(args, "power", "status")
 

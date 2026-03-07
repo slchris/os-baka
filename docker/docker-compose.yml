@@ -5,10 +5,12 @@ services:
   db:
     image: hub.infra.plz.ac/library/postgres:15-alpine
     container_name: osbaka-db
+    env_file:
+      - .env
     environment:
-      POSTGRES_DB: osbaka
-      POSTGRES_USER: osbaka
-      POSTGRES_PASSWORD: password
+      POSTGRES_DB: ${POSTGRES_DB:-osbaka}
+      POSTGRES_USER: ${POSTGRES_USER:-osbaka}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set in .env}
     volumes:
       - postgres_data:/var/lib/postgresql/data
     expose:
@@ -28,10 +30,12 @@ services:
       context: ../backend
       dockerfile: Dockerfile
     container_name: osbaka-backend
+    env_file:
+      - .env
     environment:
-      DATABASE_URL: postgresql://osbaka:password@db:5432/osbaka
-      SECRET_KEY: change-this-in-production
-      CORS_ORIGINS: http://localhost:5173,http://localhost
+      DATABASE_URL: postgresql://${POSTGRES_USER:-osbaka}:${POSTGRES_PASSWORD:?err}@db:5432/${POSTGRES_DB:-osbaka}
+      SECRET_KEY: ${SECRET_KEY:?SECRET_KEY must be set in .env}
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:5173,http://localhost}
       # Vault integration (uncomment to enable)
       # VAULT_ENABLED: "true"
       # VAULT_ADDR: "http://vault:8200"

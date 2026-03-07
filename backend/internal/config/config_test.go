@@ -69,6 +69,7 @@ func TestLoadDatabaseURLEnvOverride(t *testing.T) {
 
 func TestLoadGinModeEnvOverride(t *testing.T) {
 	t.Setenv("GIN_MODE", "release")
+	t.Setenv("SECRET_KEY", "test-secret-that-is-at-least-32-chars-long")
 
 	cfg := Load()
 
@@ -123,7 +124,7 @@ func TestLoadFromYAMLFile(t *testing.T) {
 	yamlContent := `server:
   port: "7777"
   mode: "release"
-  secret_key: "yaml-secret"
+  secret_key: "yaml-secret-that-is-at-least-32-characters-long"
 database:
   url: "postgresql://yaml:yaml@yamlhost:5432/yamldb"
 cors:
@@ -159,8 +160,8 @@ vault:
 	if cfg.Server.Mode != "release" {
 		t.Errorf("Server.Mode = %q, want %q", cfg.Server.Mode, "release")
 	}
-	if cfg.Server.SecretKey != "yaml-secret" {
-		t.Errorf("SecretKey = %q, want %q", cfg.Server.SecretKey, "yaml-secret")
+	if cfg.Server.SecretKey != "yaml-secret-that-is-at-least-32-characters-long" {
+		t.Errorf("SecretKey = %q, want %q", cfg.Server.SecretKey, "yaml-secret-that-is-at-least-32-characters-long")
 	}
 	if cfg.Database.URL != "postgresql://yaml:yaml@yamlhost:5432/yamldb" {
 		t.Errorf("Database.URL = %q, want yaml db value", cfg.Database.URL)
