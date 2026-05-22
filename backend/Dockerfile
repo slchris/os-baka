@@ -13,7 +13,10 @@ RUN go build -o main ./cmd/server
 # Run Stage
 FROM hub.infra.plz.ac/library/alpine:latest
 
-RUN apk add --no-cache ca-certificates tzdata
+# ipmitool is required for BMC power management (manual /nodes/:id/power
+# action and the auto power-cycle that follows a rebuild). Without it both
+# code paths fail at exec time with "executable file not found".
+RUN apk add --no-cache ca-certificates tzdata ipmitool
 
 WORKDIR /app
 
