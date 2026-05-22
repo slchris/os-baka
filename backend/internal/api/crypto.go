@@ -22,6 +22,14 @@ var (
 	fieldCipherErr  error
 )
 
+// resetFieldCipherForTest re-arms the lazy init so tests can swap the key.
+// Must NOT be called outside tests — concurrent use is unsafe.
+func resetFieldCipherForTest() {
+	fieldCipher = nil
+	fieldCipherErr = nil
+	fieldCipherOnce = sync.Once{}
+}
+
 // getFieldCipher lazily initializes and returns the AES-256-GCM cipher
 // used for encrypting sensitive fields like IPMI passwords.
 // The key is read from the FIELD_ENCRYPTION_KEY environment variable (hex-encoded, 32 bytes).

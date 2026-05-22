@@ -46,10 +46,9 @@ services:
       BACKEND_URL: http://backend:8000
       EXTERNAL_IP: ${EXTERNAL_IP:-10.31.0.3}
       GIN_MODE: release
-      # Vault integration (uncomment to enable)
-      # VAULT_ENABLED: "true"
-      # VAULT_ADDR: "http://vault:8200"
-      # VAULT_TOKEN: "${VAULT_TOKEN}"
+      # FIELD_ENCRYPTION_KEY enables AES-256-GCM encryption of LUKS passphrases
+      # and other sensitive node fields at rest. Generate via: openssl rand -hex 32
+      FIELD_ENCRYPTION_KEY: ${FIELD_ENCRYPTION_KEY:?Set FIELD_ENCRYPTION_KEY in .env file}
     volumes:
       - dnsmasq_config:/etc/dnsmasq.d
       - pxe_assets:/tftpboot

@@ -1,0 +1,15 @@
+BEGIN;
+
+DROP TABLE IF EXISTS pxe_provisioning_tokens;
+DROP TABLE IF EXISTS api_keys;
+DROP TABLE IF EXISTS audit_logs;
+DROP TABLE IF EXISTS notifications;
+DROP TABLE IF EXISTS boot_assets;
+DROP TABLE IF EXISTS dhcp_reservations;
+DROP TABLE IF EXISTS dhcp_configs;
+DROP TABLE IF EXISTS node_tags;
+DROP TABLE IF EXISTS node_groups;
+DROP TABLE IF EXISTS nodes;
+DROP TABLE IF EXISTS users;
+
+COMMIT;

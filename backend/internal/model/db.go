@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/os-baka/backend/internal/config"
+	"github.com/os-baka/backend/internal/dbmigrate"
 	"golang.org/x/crypto/bcrypt"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
@@ -53,9 +54,13 @@ func InitDB(cfg *config.Config) {
 	sqlDB.SetConnMaxIdleTime(10 * time.Minute)
 	slog.Info("Database pool configured", "max_idle", maxIdle, "max_open", maxOpen)
 
-	// ── Auto Migrate ──
-	if err := DB.AutoMigrate(AllModels()...); err != nil {
-		slog.Error("Failed to migrate database", "error", err)
+	// ── Schema migrations ──
+	// Migrations are the single source of truth for DDL. GORM models are
+	// query-time DTOs only and DO NOT drive schema. Adding a field to a
+	// model without a corresponding migration will silently fail at runtime.
+	if err := dbmigrate.Up(DB); err != nil {
+		slog.Error("Failed to run schema migrations", "error", err)
+		os.Exit(1)
 	}
 
 	// ── Seed defaults ──

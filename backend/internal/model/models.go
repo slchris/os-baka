@@ -34,9 +34,10 @@ type Node struct {
 	Status               string // active, inactive, installing, maintenance, error, offline
 	OSType               string // ubuntu, debian
 	OSVersion            string `json:"os_version"`
-	MirrorURL            string `json:"mirror_url"`     // Custom mirror URL for this node
+	MirrorURL            string `json:"mirror_url"`           // Custom mirror URL for this node (main archive)
+	SecurityMirrorURL    string `json:"security_mirror_url"`  // Custom security mirror URL (separate archive on Debian/Ubuntu)
 	Timezone             string `json:"timezone"`       // Timezone for the node (e.g., UTC, Asia/Shanghai)
-	RootPassword         string `json:"-"`              // Root password (stored hashed in preseed)
+	RootPassword         string `json:"-"`              // Root password (AES-GCM encrypted at rest, plaintext in preseed — installer hashes it)
 	SSHEnabled           bool   `json:"ssh_enabled"`    // Enable SSH server
 	SSHRootLogin         bool   `json:"ssh_root_login"` // Allow root SSH login
 	EncryptionEnabled    bool
@@ -44,11 +45,26 @@ type Node struct {
 	TPMEnabled           bool   `json:"tpm_enabled"`
 	USBKeyRequired       bool   `json:"usb_key_required"`
 	PCRBinding           string `json:"pcr_binding"` // comma-separated PCR ids, optional
-	// IPMI / BMC
-	IPMIAddress        string `json:"ipmi_address"`
-	IPMIUsername       string `json:"ipmi_username"`
-	IPMIPassword       string `json:"-"` // stored encrypted (AES-256-GCM)
-	IPMIAllowUntrusted bool   `json:"ipmi_allow_untrusted"`
+	// IPMI / BMC. Explicit column tags because GORM's snake_case converter
+	// otherwise mangles "IPMI" mid-acronym (IPMIPassword → ip_m_ipassword).
+	// Migration 000003 renamed the columns; the tags pin them in place.
+	IPMIAddress        string `gorm:"column:ipmi_address"         json:"ipmi_address"`
+	IPMIUsername       string `gorm:"column:ipmi_username"        json:"ipmi_username"`
+	IPMIPassword       string `gorm:"column:ipmi_password"        json:"-"` // stored encrypted (AES-256-GCM)
+	IPMIAllowUntrusted bool   `gorm:"column:ipmi_allow_untrusted" json:"ipmi_allow_untrusted"`
+	// TargetDisk is the device path the installer writes the OS onto
+	// (/dev/sda, /dev/nvme0n1, /dev/disk/by-id/...). When empty the
+	// preseed runs a partman/early_command that auto-detects: picks the
+	// largest non-removable disk, preferring nvme* > vd* > sd*. Set it
+	// explicitly for nodes where auto-detect can't choose correctly
+	// (multiple same-size disks, controllers with weird naming).
+	TargetDisk string `gorm:"column:target_disk" json:"target_disk"`
+
+	// Provisioning lifecycle: stamped when the node enters `installing` (or
+	// `pending` if that's the entry point); cleared when it leaves to any
+	// terminal state. Drives the install-timeout watcher.
+	InstallingStartedAt *time.Time `gorm:"column:installing_started_at" json:"installing_started_at"`
+
 	// Heartbeat / Health
 	LastHeartbeat *time.Time `json:"last_heartbeat"`
 	CPUUsage      float64    `json:"cpu_usage"`    // percentage 0-100
@@ -100,8 +116,9 @@ type DHCPConfig struct {
 	BootFile     string         `gorm:"default:'undionly.kpxe'" json:"boot_file"` // PXE boot file
 	NextServer   string         `json:"next_server"`                              // Next server IP (usually same as TFTP)
 	BootServerIP string         `json:"boot_server_ip"`                           // IP address for HTTP boot (API/Nginx)
-	MirrorURL    string         `json:"mirror_url"`                               // OS mirror URL
-	KernelParams string         `json:"kernel_params"`                            // Kernel parameters for PXE boot
+	MirrorURL         string    `json:"mirror_url"`                               // OS mirror URL (main archive)
+	SecurityMirrorURL string    `json:"security_mirror_url"`                      // Security mirror URL (separate archive)
+	KernelParams      string    `json:"kernel_params"`                            // Kernel parameters for PXE boot
 	IsActive     bool           `gorm:"default:false" json:"is_active"`           // Is this the active configuration
 	EnablePXE    bool           `gorm:"default:true" json:"enable_pxe"`           // Enable PXE boot
 }
@@ -168,6 +185,20 @@ type Notification struct {
 // API Keys
 // ──────────────────────────────────────────────────
 
+// PXEProvisioningToken authorizes PXE preseed/postinstall fetches for a node
+// during a single provisioning window. The plaintext token is embedded into
+// the iPXE imgargs URL when the node fetches its boot script and consumed by
+// the post-install callback. Stored as SHA-256 hash; never logged in cleartext.
+type PXEProvisioningToken struct {
+	ID         uint       `gorm:"primarykey" json:"id"`
+	CreatedAt  time.Time  `json:"created_at"`
+	NodeID     uint       `gorm:"index" json:"node_id"`
+	TokenHash  string     `gorm:"uniqueIndex" json:"-"` // hex-encoded SHA-256
+	ClientIP   string     `json:"client_ip"`            // IP that fetched the boot script — preseed/postinstall must match
+	ExpiresAt  time.Time  `gorm:"index" json:"expires_at"`
+	ConsumedAt *time.Time `json:"consumed_at"` // set when PostInstall reports success
+}
+
 // APIKey enables programmatic access (CI/CD, Terraform, scripts).
 type APIKey struct {
 	ID         uint       `gorm:"primarykey" json:"id"`
@@ -183,18 +214,3 @@ type APIKey struct {
 	IsActive   bool       `gorm:"default:true" json:"is_active"` // Soft disable
 }
 
-// AllModels returns all GORM model types for AutoMigrate.
-func AllModels() []interface{} {
-	return []interface{}{
-		&User{},
-		&Node{},
-		&Notification{},
-		&DHCPConfig{},
-		&DHCPReservation{},
-		&BootAsset{},
-		&AuditLog{},
-		&NodeGroup{},
-		&NodeTag{},
-		&APIKey{},
-	}
-}

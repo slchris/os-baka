@@ -10,9 +10,9 @@ import (
 
 // RegisterRoutes sets up all API route groups on the given Gin engine.
 // Routes are organized into: public, PXE, internal, and protected groups.
-func RegisterRoutes(r *gin.Engine, cfg *config.Config, secretStoreType string) {
+func RegisterRoutes(r *gin.Engine, cfg *config.Config) {
 	// ── Health & Info ──
-	registerHealthRoutes(r, cfg, secretStoreType)
+	registerHealthRoutes(r, cfg)
 
 	// ── API v1 ──
 	apiGroup := r.Group("/api/v1")
@@ -35,7 +35,7 @@ func RegisterRoutes(r *gin.Engine, cfg *config.Config, secretStoreType string) {
 	registerProtectedRoutes(apiGroup, cfg)
 }
 
-func registerHealthRoutes(r *gin.Engine, cfg *config.Config, secretStoreType string) {
+func registerHealthRoutes(r *gin.Engine, cfg *config.Config) {
 	r.Static("/tftp", "/tftpboot")
 
 	// Liveness probe — always returns 200 if the process is running
@@ -66,10 +66,9 @@ func registerHealthRoutes(r *gin.Engine, cfg *config.Config, secretStoreType str
 
 	r.GET("/", func(c *gin.Context) {
 		c.JSON(200, gin.H{
-			"message":      "OS Baka API (Go)",
-			"version":      "1.0.0",
-			"docs":         "/api/v1/docs/index.html",
-			"secret_store": secretStoreType,
+			"message": "OS Baka API (Go)",
+			"version": "1.0.0",
+			"docs":    "/api/v1/docs/index.html",
 		})
 	})
 }

@@ -32,9 +32,6 @@ func TestLoadDefaultValues(t *testing.T) {
 	if cfg.Server.SecretKey != "change-this-in-production" {
 		t.Errorf("SecretKey = %q, want %q", cfg.Server.SecretKey, "change-this-in-production")
 	}
-	if cfg.Vault.Enabled {
-		t.Error("Vault.Enabled should default to false")
-	}
 }
 
 func TestLoadEnvOverride(t *testing.T) {
@@ -78,44 +75,6 @@ func TestLoadGinModeEnvOverride(t *testing.T) {
 	}
 }
 
-func TestLoadVaultEnvOverrides(t *testing.T) {
-	t.Setenv("VAULT_ENABLED", "true")
-	t.Setenv("VAULT_ADDR", "http://vault.example.com:8200")
-	t.Setenv("VAULT_TOKEN", "test-vault-token")
-
-	cfg := Load()
-
-	if !cfg.Vault.Enabled {
-		t.Error("Vault.Enabled should be true when VAULT_ENABLED=true")
-	}
-	if cfg.Vault.Address != "http://vault.example.com:8200" {
-		t.Errorf("Vault.Address = %q, want the env value", cfg.Vault.Address)
-	}
-	if cfg.Vault.Token != "test-vault-token" {
-		t.Errorf("Vault.Token = %q, want the env value", cfg.Vault.Token)
-	}
-}
-
-func TestLoadVaultEnabled1(t *testing.T) {
-	t.Setenv("VAULT_ENABLED", "1")
-
-	cfg := Load()
-
-	if !cfg.Vault.Enabled {
-		t.Error("Vault.Enabled should be true when VAULT_ENABLED=1")
-	}
-}
-
-func TestLoadVaultEnabledFalse(t *testing.T) {
-	t.Setenv("VAULT_ENABLED", "false")
-
-	cfg := Load()
-
-	if cfg.Vault.Enabled {
-		t.Error("Vault.Enabled should be false when VAULT_ENABLED=false")
-	}
-}
-
 func TestLoadFromYAMLFile(t *testing.T) {
 	// Create a temporary config file
 	tmpDir := t.TempDir()
@@ -131,11 +90,6 @@ cors:
   allowed_origins:
     - "http://localhost:3000"
     - "http://example.com"
-vault:
-  enabled: true
-  address: "http://yaml-vault:8200"
-  mount_path: "kv"
-  path_prefix: "myapp/nodes"
 `
 	if err := os.WriteFile(configPath, []byte(yamlContent), 0644); err != nil {
 		t.Fatalf("Failed to create test config file: %v", err)
@@ -165,15 +119,6 @@ vault:
 	}
 	if cfg.Database.URL != "postgresql://yaml:yaml@yamlhost:5432/yamldb" {
 		t.Errorf("Database.URL = %q, want yaml db value", cfg.Database.URL)
-	}
-	if !cfg.Vault.Enabled {
-		t.Error("Vault.Enabled should be true from YAML")
-	}
-	if cfg.Vault.Address != "http://yaml-vault:8200" {
-		t.Errorf("Vault.Address = %q, want YAML value", cfg.Vault.Address)
-	}
-	if cfg.Vault.MountPath != "kv" {
-		t.Errorf("Vault.MountPath = %q, want %q", cfg.Vault.MountPath, "kv")
 	}
 	if len(cfg.Cors.AllowedOrigins) != 2 {
 		t.Errorf("Cors.AllowedOrigins len = %d, want 2", len(cfg.Cors.AllowedOrigins))

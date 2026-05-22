@@ -12,10 +12,6 @@ database:
   max_idle_conns: 10
   max_open_conns: 100
 
-# Redis Configuration
-redis:
-  url: "redis://redis:6379/0"
-
 # CORS Configuration
 cors:
   allowed_origins:
@@ -24,12 +20,6 @@ cors:
     - "http://127.0.0.1:3000"
     - "http://127.0.0.1:5173"
 
-# HashiCorp Vault Configuration (for LUKS passphrase storage)
-# Enable Vault to avoid storing encryption passphrases as plaintext in the database.
-# Env vars: VAULT_ENABLED=true VAULT_ADDR=http://vault:8200 VAULT_TOKEN=<token>
-vault:
-  enabled: false
-  address: "http://vault:8200"
-  # token: "" # Set via VAULT_TOKEN env var in production
-  mount_path: "secret"     # KV v2 secrets engine mount
-  path_prefix: "osbaka/nodes"  # Vault path prefix for node secrets
+# LUKS passphrase storage: passphrases are AES-256-GCM encrypted at rest in the
+# node row using FIELD_ENCRYPTION_KEY (hex-encoded 32 bytes). Set the env var
+# in production; without it the passphrase is stored as plaintext.
