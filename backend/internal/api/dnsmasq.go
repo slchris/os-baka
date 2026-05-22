@@ -65,7 +65,12 @@ func GenerateDnsmasqConfig() error {
 	// HUP dnsmasq for no change. The watcher polls every 2s so failure
 	// to signal here is recoverable on the next successful regen.
 	if len(errs) < 2 {
-		if err := os.WriteFile(dnsmasqReloadTrigger, []byte("reload"), 0644); err != nil {
+		// 0644: the pxe-services container's start.sh polls this file
+		// (a tiny sentinel containing the word "reload") to detect
+		// config changes and HUP dnsmasq. Cross-container reads require
+		// world-readable mode; tighter perms would silently break the
+		// reload pipeline.
+		if err := os.WriteFile(dnsmasqReloadTrigger, []byte("reload"), 0644); err != nil { // #nosec G306 — see above
 			slog.Warn("dnsmasq: reload trigger write failed", "error", err)
 		}
 	}

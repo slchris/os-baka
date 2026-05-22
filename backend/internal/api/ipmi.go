@@ -184,8 +184,16 @@ type PowerActionRequest struct {
 // runIPMICommand is the actual exec.CommandContext invocation. Indirected
 // through a package variable so tests can stub IPMI calls without needing
 // ipmitool on PATH.
+//
+// Safety note for gosec G204: args is exclusively produced by
+// buildIpmitoolArgs from operator-supplied Node fields. ipmitool does not
+// pass args through a shell — exec.CommandContext forks ipmitool directly
+// with the argv vector, so there's no shell-metacharacter expansion risk.
+// The remaining attack surface is "an operator with admin role types a
+// hostile IPMI flag into the BMC config UI" which is exactly the threat
+// model that admin role exists for.
 var runIPMICommand = func(ctx context.Context, args []string) (string, error) {
-	cmd := exec.CommandContext(ctx, "ipmitool", args...)
+	cmd := exec.CommandContext(ctx, "ipmitool", args...) // #nosec G204 — see above
 	out, err := cmd.CombinedOutput()
 	return strings.TrimSpace(string(out)), err
 }
