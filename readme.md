@@ -193,6 +193,12 @@
 
 ## 架构概览
 
+> **完整交互式架构图见 [`docs/architecture.html`](./docs/architecture.html)** ——
+> 单文件 HTML,Excalidraw 风格手绘图,5 个 tab 分别覆盖组件拓扑 / PXE 装机时序 /
+> 节点状态机 / 后台 watcher / 节点注册流。双击文件即可在浏览器打开,无需 build。
+
+下面是 ASCII 速览(精度有限,详情请看上面的 HTML):
+
 ```
                     ┌───────────────────────────────────────────────┐
                     │                 OS-Baka 管理节点                │

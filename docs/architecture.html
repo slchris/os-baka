@@ -1,0 +1,888 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>OS-Baka — 架构图</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+  /* ===== Excalidraw-ish palette + typography ===== */
+  :root {
+    --bg:        #fdfaf3;        /* warm off-white */
+    --grid:     rgba(0,0,0,.04);
+    --ink:       #1e1e1e;
+    --muted:     #6b6b6b;
+    --accent:    #5a4fcf;        /* indigo (Excalidraw violet) */
+    --accent-2:  #e07b3f;        /* burnt orange */
+    --green:     #4f9d5f;
+    --yellow:    #d9ad4a;
+    --red:       #c75a5a;
+    --blue:      #4a87c7;
+    --grey:      #8a8a8a;
+    --fill-1:    #fef3c7;        /* soft yellow */
+    --fill-2:    #dbeafe;        /* soft blue */
+    --fill-3:    #d1fae5;        /* soft green */
+    --fill-4:    #fce7f3;        /* soft pink */
+    --fill-5:    #ede9fe;        /* soft purple */
+  }
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0; padding: 0;
+    background: var(--bg);
+    background-image:
+      radial-gradient(circle, var(--grid) 1px, transparent 1px);
+    background-size: 22px 22px;
+    color: var(--ink);
+    font-family: "Caveat", "Comic Sans MS", "Segoe Print", "Apple Chancery", cursive, system-ui;
+    font-size: 17px;
+    line-height: 1.45;
+    min-height: 100vh;
+  }
+  body { padding: 24px 32px 80px; }
+  header {
+    max-width: 1320px;
+    margin: 0 auto 24px;
+  }
+  header h1 {
+    font-size: 38px;
+    margin: 0 0 6px;
+    letter-spacing: .5px;
+  }
+  header p {
+    margin: 0;
+    color: var(--muted);
+    font-size: 18px;
+  }
+  header .meta {
+    margin-top: 10px;
+    font-family: ui-monospace, "SF Mono", Menlo, monospace;
+    font-size: 13px;
+    color: var(--muted);
+  }
+
+  /* ===== Tabs ===== */
+  nav.tabs {
+    max-width: 1320px;
+    margin: 0 auto 18px;
+    display: flex;
+    gap: 6px;
+    flex-wrap: wrap;
+    border-bottom: 2px dashed rgba(0,0,0,.15);
+    padding-bottom: 8px;
+  }
+  nav.tabs button {
+    font-family: inherit;
+    font-size: 18px;
+    background: transparent;
+    border: 2px solid var(--ink);
+    border-radius: 12px;
+    padding: 6px 14px;
+    cursor: pointer;
+    color: var(--ink);
+    transition: transform .1s, background .15s;
+    /* slight rotation for Excalidraw feel */
+    transform: rotate(-.4deg);
+  }
+  nav.tabs button:nth-child(2n) { transform: rotate(.6deg); }
+  nav.tabs button:hover { background: var(--fill-2); }
+  nav.tabs button.active {
+    background: var(--ink);
+    color: var(--bg);
+    transform: rotate(0deg);
+  }
+
+  /* ===== Panel layout ===== */
+  .panels { max-width: 1320px; margin: 0 auto; }
+  .panel { display: none; }
+  .panel.active { display: grid; grid-template-columns: minmax(0, 1fr) 360px; gap: 24px; }
+
+  @media (max-width: 1080px) {
+    .panel.active { grid-template-columns: 1fr; }
+  }
+
+  .canvas-wrap {
+    background: rgba(255,255,255,.55);
+    border: 2px solid var(--ink);
+    border-radius: 14px;
+    padding: 14px;
+    overflow: auto;
+    min-height: 580px;
+    position: relative;
+  }
+  .canvas-wrap svg {
+    display: block;
+    width: 100%;
+    height: auto;
+  }
+  .legend {
+    background: rgba(255,255,255,.7);
+    border: 2px solid var(--ink);
+    border-radius: 14px;
+    padding: 18px 20px;
+    font-size: 16px;
+  }
+  .legend h2 {
+    margin: 0 0 10px;
+    font-size: 24px;
+    border-bottom: 2px solid var(--ink);
+    padding-bottom: 4px;
+  }
+  .legend h3 {
+    font-size: 19px;
+    margin: 16px 0 6px;
+    color: var(--accent);
+  }
+  .legend p, .legend li { margin: 4px 0; }
+  .legend ul { padding-left: 20px; }
+  .legend code {
+    font-family: ui-monospace, "SF Mono", Menlo, monospace;
+    font-size: 13px;
+    background: var(--fill-1);
+    padding: 1px 5px;
+    border-radius: 4px;
+  }
+  .legend .tag {
+    display: inline-block;
+    border: 1.5px solid var(--ink);
+    border-radius: 8px;
+    padding: 1px 7px;
+    margin-right: 4px;
+    font-size: 14px;
+  }
+  .legend .tag.now { background: var(--fill-3); }
+  .legend .tag.next { background: var(--fill-1); }
+  .legend .tag.warn { background: var(--fill-4); }
+
+  /* ===== Tooltip ===== */
+  #tooltip {
+    position: fixed;
+    pointer-events: none;
+    background: var(--ink);
+    color: var(--bg);
+    padding: 6px 10px;
+    border-radius: 6px;
+    font-size: 14px;
+    max-width: 280px;
+    line-height: 1.35;
+    opacity: 0;
+    transition: opacity .12s;
+    z-index: 1000;
+  }
+  /* hover targets in SVG */
+  .svg-hot { cursor: help; }
+
+  footer {
+    max-width: 1320px;
+    margin: 40px auto 0;
+    font-size: 14px;
+    color: var(--muted);
+    border-top: 1px dashed rgba(0,0,0,.15);
+    padding-top: 12px;
+    font-family: ui-monospace, "SF Mono", Menlo, monospace;
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>OS-Baka — 系统架构 (live)</h1>
+  <p>裸金属装机平台 · React 19 + Go 1.24 + Postgres 15 · 9 个 commit 之后的当前形态</p>
+  <div class="meta">commit head · 7 状态机 · golang-migrate · PXE one-time token · dnsmasq scheduler · IPMI auto-cycle</div>
+</header>
+
+<nav class="tabs" id="tabs">
+  <button data-tab="topology" class="active">① 组件拓扑</button>
+  <button data-tab="pxe-flow">② PXE 装机时序</button>
+  <button data-tab="state-machine">③ 节点状态机</button>
+  <button data-tab="watchers">④ 后台 watcher</button>
+  <button data-tab="register">⑤ 节点注册流</button>
+</nav>
+
+<div class="panels" id="panels">
+
+  <!-- ===== Panel 1: Topology ===== -->
+  <section class="panel active" data-tab="topology">
+    <div class="canvas-wrap"><svg id="svg-topology" viewBox="0 0 1280 820"></svg></div>
+    <aside class="legend">
+      <h2>组件拓扑</h2>
+      <p>三个容器一个 DB,加上若干被装机的物理节点。所有 API 流量经 Backend。</p>
+
+      <h3>当前现状 <span class="tag now">NOW</span></h3>
+      <ul>
+        <li><b>Frontend</b> :3000 — Vite/React SPA;开发时 dev server,prod 用 nginx</li>
+        <li><b>Backend</b> :8000 — Go 单体 binary;启动时自动 apply migrations</li>
+        <li><b>PXE-services</b> :host network — dnsmasq + TFTP + iPXE,2s 轮询 .reload 文件 HUP dnsmasq</li>
+        <li><b>Postgres</b> :5432 — 单实例;7 个 migration 已 apply 到 v6</li>
+        <li><b>共享卷</b>:<code>/etc/dnsmasq.d</code>(backend 写 → pxe 读)、<code>/tftpboot</code>(双向)</li>
+      </ul>
+
+      <h3>建议演进 <span class="tag next">NEXT</span></h3>
+      <ul>
+        <li>Backend 单实例 — 多实例会写同一 dnsmasq config 互相覆盖,需要引入 leader-election 或外置生成器</li>
+        <li>Postgres 无 replica,无 PITR — 装机平台数据可重建,但 audit log 历史值得至少 daily backup</li>
+        <li>PXE-services 跑 host network → 不能在云端跑(host network 需要专用网卡或裸机)</li>
+      </ul>
+
+      <h3>失败模式 <span class="tag warn">WATCH</span></h3>
+      <ul>
+        <li>Backend 挂 → PXE token 颁发不动 → 装机停;dnsmasq 旧配置仍生效,已开机的机器不受影响</li>
+        <li>dnsmasq 挂 → 新机器拿不到 IP/boot file → 装机停</li>
+        <li>Postgres 挂 → backend health/ready 返 503,整体 down</li>
+      </ul>
+    </aside>
+  </section>
+
+  <!-- ===== Panel 2: PXE flow ===== -->
+  <section class="panel" data-tab="pxe-flow">
+    <div class="canvas-wrap"><svg id="svg-pxe" viewBox="0 0 1380 1280"></svg></div>
+    <aside class="legend">
+      <h2>PXE 装机时序</h2>
+      <p>5 条 swimlane:Node / dnsmasq / Backend / DB / Mirror。从机器上电到 status=active 全程。</p>
+
+      <h3>关键路径 <span class="tag now">NOW</span></h3>
+      <ul>
+        <li>Boot script 阶段:backend 颁发一次性 PXE token(默认 4h TTL = INSTALL_TIMEOUT × 2)</li>
+        <li>Preseed 阶段:token 验证不消费(installer 可重试)</li>
+        <li>PostInstall 阶段:token 验证 + 消费 + 绑 client IP</li>
+        <li>callback 失败 5 次 × 10s 重试,失败保留脚本下次开机再试</li>
+        <li>装机超时 120 min(env <code>INSTALL_TIMEOUT_MINUTES</code>)→ 后台 watcher 自动标 error</li>
+      </ul>
+
+      <h3>失败模式 <span class="tag warn">WATCH</span></h3>
+      <ul>
+        <li>Mirror 不可达 → kernel/initrd 下载失败 → iPXE shell;backend 不知道</li>
+        <li>TPM enroll 失败 → 装出来仍能 boot 但每次开机要密码;日志在 <code>/var/log/osbaka-tpm-setup.log</code></li>
+        <li>callback 5 次全失败 → 节点卡 installing → 120min 后 error;脚本仍在盘,reboot 还会试</li>
+      </ul>
+
+      <h3>建议演进 <span class="tag next">NEXT</span></h3>
+      <ul>
+        <li>PostInstall callback 改成 progress-aware:支持 <code>{"step":"luks_done"}</code> 等多步上报</li>
+        <li>Backend 加 health endpoint 给 PXE-services 用,避免 backend 重启时丢 token</li>
+      </ul>
+    </aside>
+  </section>
+
+  <!-- ===== Panel 3: State machine ===== -->
+  <section class="panel" data-tab="state-machine">
+    <div class="canvas-wrap"><svg id="svg-state" viewBox="0 0 1280 720"></svg></div>
+    <aside class="legend">
+      <h2>节点状态机</h2>
+      <p>7 状态。所有转换由 <code>SetNodeStatus()</code> 校验。非法跃迁返回 <code>ErrIllegalTransition</code>。</p>
+
+      <h3>触发因子 <span class="tag now">NOW</span></h3>
+      <ul>
+        <li><b>operator</b> — UI/API 显式操作(蓝边)</li>
+        <li><b>system</b> — postinstall callback / background watcher(橙边)</li>
+        <li><b>auto-discover</b> — 未知 MAC 触发 PXE(绿边)</li>
+      </ul>
+
+      <h3>关键不变量 <span class="tag now">NOW</span></h3>
+      <ul>
+        <li><code>discovered</code> → 操作员审批 → <code>pending|installing</code>(防共享 L2 自动装机)</li>
+        <li><code>installing</code> 进入时自动打 <code>installing_started_at</code>;离开时清</li>
+        <li>heartbeat 只允许 <code>active</code> ⇄ <code>offline</code>;其他状态心跳只更新指标</li>
+      </ul>
+
+      <h3>建议演进 <span class="tag next">NEXT</span></h3>
+      <ul>
+        <li>加 <code>decommissioned</code> 状态做软退役 — 当前 delete 立即销毁审计 snapshot 已经在 audit 里,但 hostname/MAC 回收需要更明确</li>
+        <li>error 状态加 <code>error_reason</code> 字段 — 当前看不出是装机超时、网络失败还是 TPM 失败</li>
+      </ul>
+    </aside>
+  </section>
+
+  <!-- ===== Panel 4: Watchers ===== -->
+  <section class="panel" data-tab="watchers">
+    <div class="canvas-wrap"><svg id="svg-watchers" viewBox="0 0 1280 720"></svg></div>
+    <aside class="legend">
+      <h2>后台 watcher / 调度器</h2>
+      <p>三个长期运行的 goroutine,在 main.go 启动时拉起。</p>
+
+      <h3>当前现状 <span class="tag now">NOW</span></h3>
+      <ul>
+        <li><b>StaleNodeChecker</b> — 5min ticker,扫 <code>active</code> 节点 last_heartbeat 超 10 min → offline</li>
+        <li><b>InstallTimeoutChecker</b> — 同 ticker,扫 <code>installing</code> 节点 installing_started_at 超 120 min → error</li>
+        <li><b>DnsmasqScheduler</b> — leading + trailing coalesce;N 次 ScheduleRegen 收敛到 ≤ 2 次执行;200ms cooldown;LastError 暴露到 dashboard</li>
+      </ul>
+
+      <h3>建议演进 <span class="tag next">NEXT</span></h3>
+      <ul>
+        <li>三个 ticker 合一 — 当前都是 5min 同步,可以共用 ticker 减少 goroutine</li>
+        <li>引入 backoff:同节点反复装机失败,timeout watcher 重复标 error 没有指数退避,操作员 UI 上看不到"已经第 3 次失败了"</li>
+        <li>把这三个 watcher 暴露 prometheus metrics:run_count / error_count / last_run_age</li>
+      </ul>
+    </aside>
+  </section>
+
+  <!-- ===== Panel 5: Node registration ===== -->
+  <section class="panel" data-tab="register">
+    <div class="canvas-wrap"><svg id="svg-register" viewBox="0 0 1380 900"></svg></div>
+    <aside class="legend">
+      <h2>节点注册流</h2>
+      <p>从 UI 创建一个新节点到 dnsmasq 实际加进 reservation 的完整路径。</p>
+
+      <h3>关键步骤 <span class="tag now">NOW</span></h3>
+      <ul>
+        <li>POST /api/v1/nodes 入口校验:hostname/MAC/IP/mirror/disk path</li>
+        <li>passphrase + IPMI password 在写 DB 前 AES-256-GCM 加密(<code>FIELD_ENCRYPTION_KEY</code>)</li>
+        <li>DHCP reservation 同步插入,操作员 unseen</li>
+        <li><code>ScheduleDnsmasqRegen()</code> 非阻塞,scheduler 合并 burst</li>
+      </ul>
+
+      <h3>建议演进 <span class="tag next">NEXT</span></h3>
+      <ul>
+        <li>CSV 批量导入当前是前端逐条 POST — 加 <code>POST /api/v1/nodes/bulk</code> 后端原子事务,减 N 次网络 + N 次 audit row</li>
+        <li>UI 增加 dry-run mode:校验所有字段但不持久化,让用户在大批量导入前确认</li>
+      </ul>
+    </aside>
+  </section>
+
+</div>
+
+<div id="tooltip"></div>
+
+<footer>
+  Excalidraw-style schematic — single-file HTML, inlined rough.js. View source · zero build · works offline.
+</footer>
+
+<!-- rough.js — minified ESM, ~28KB, hand-drawn SVG primitives -->
+<script src="https://cdn.jsdelivr.net/npm/roughjs@4.6.6/bundled/rough.min.js"></script>
+<script>
+// =====================================================================
+// SHARED HELPERS
+// =====================================================================
+const tooltip = document.getElementById('tooltip');
+
+function attachTooltip(svgEl, text) {
+  svgEl.classList.add('svg-hot');
+  svgEl.addEventListener('mousemove', e => {
+    tooltip.textContent = text;
+    tooltip.style.left  = (e.clientX + 14) + 'px';
+    tooltip.style.top   = (e.clientY + 14) + 'px';
+    tooltip.style.opacity = '1';
+  });
+  svgEl.addEventListener('mouseleave', () => {
+    tooltip.style.opacity = '0';
+  });
+}
+
+// Generic rough.js draw helpers — returns the <g> element so we can hook tooltips.
+function svgGroup(svg) {
+  const g = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+  svg.appendChild(g);
+  return g;
+}
+
+// Text node helper. Default size bumped — diagrams were unreadable at 16.
+function svgText(svg, x, y, str, opts = {}) {
+  const t = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+  t.setAttribute('x', x);
+  t.setAttribute('y', y);
+  t.setAttribute('text-anchor', opts.anchor || 'middle');
+  t.setAttribute('dominant-baseline', opts.baseline || 'middle');
+  t.setAttribute('font-family', '"Caveat","Comic Sans MS","Segoe Print",cursive,system-ui');
+  t.setAttribute('font-size',  opts.size || 20);
+  t.setAttribute('fill',       opts.color || '#1e1e1e');
+  if (opts.weight) t.setAttribute('font-weight', opts.weight);
+  t.textContent = str;
+  svg.appendChild(t);
+  return t;
+}
+
+// Rough.js box with text inside.
+function box(rc, svg, x, y, w, h, label, opts = {}) {
+  const g = svgGroup(svg);
+  const node = rc.rectangle(x, y, w, h, {
+    fill: opts.fill || '#fef3c7',
+    fillStyle: 'hachure',
+    hachureGap: 7,
+    fillWeight: 1.2,
+    roughness: 1.6,
+    stroke: '#1e1e1e',
+    strokeWidth: 2,
+  });
+  g.appendChild(node);
+  // Multi-line label (split on \n)
+  const lines = String(label).split('\n');
+  const lineH = (opts.lineHeight || 24);
+  const totalH = lines.length * lineH;
+  let cy = y + (h - totalH) / 2 + lineH / 2;
+  for (const line of lines) {
+    const t = svgText(svg, x + w / 2, cy, line, {
+      size: opts.size || 20,
+      weight: opts.weight || 'normal',
+    });
+    g.appendChild(t);
+    cy += lineH;
+  }
+  if (opts.tooltip) attachTooltip(g, opts.tooltip);
+  return g;
+}
+
+// Rough arrow from (x1,y1) to (x2,y2).
+function arrow(rc, svg, x1, y1, x2, y2, opts = {}) {
+  const g = svgGroup(svg);
+  const line = rc.line(x1, y1, x2, y2, {
+    stroke: opts.color || '#1e1e1e',
+    strokeWidth: opts.width || 1.8,
+    roughness: 1.4,
+  });
+  g.appendChild(line);
+  // Arrowhead
+  const angle = Math.atan2(y2 - y1, x2 - x1);
+  const headLen = opts.headLen || 12;
+  const headAng = 0.45;
+  const ax1 = x2 - headLen * Math.cos(angle - headAng);
+  const ay1 = y2 - headLen * Math.sin(angle - headAng);
+  const ax2 = x2 - headLen * Math.cos(angle + headAng);
+  const ay2 = y2 - headLen * Math.sin(angle + headAng);
+  g.appendChild(rc.line(x2, y2, ax1, ay1, { stroke: opts.color || '#1e1e1e', strokeWidth: opts.width || 1.8, roughness: 1.0 }));
+  g.appendChild(rc.line(x2, y2, ax2, ay2, { stroke: opts.color || '#1e1e1e', strokeWidth: opts.width || 1.8, roughness: 1.0 }));
+  if (opts.label) {
+    // Midpoint label, multi-line supported. Caller can nudge horizontally
+    // via labelOffsetX (used when parallel lane offsets would put labels
+    // on top of each other).
+    const mx = (x1 + x2) / 2 + (opts.labelOffsetX || 0);
+    const my = (y1 + y2) / 2;
+    const lines = String(opts.label).split('\n');
+    const lineH = opts.labelLineHeight || 18;
+    const labelSize = opts.labelSize || 16;
+    let cy = my - (lines.length * lineH) / 2 - 4;
+    for (const line of lines) {
+      const t = svgText(svg, mx, cy, line, {
+        size: labelSize,
+        color: opts.color || '#5a4fcf',
+      });
+      g.appendChild(t);
+      cy += lineH;
+    }
+  }
+  return g;
+}
+
+// Dashed line variant for "logical" / "implicit" connections.
+function dashedLine(rc, svg, x1, y1, x2, y2, opts = {}) {
+  const g = svgGroup(svg);
+  // rough.js doesn't have native dash; simulate with strokeLineDash on the underlying path
+  // by using a slightly different rendering — we'll draw multiple short segments.
+  const total = Math.hypot(x2 - x1, y2 - y1);
+  const dashLen = 8;
+  const gapLen = 5;
+  const segLen = dashLen + gapLen;
+  const count = Math.floor(total / segLen);
+  const dx = (x2 - x1) / total;
+  const dy = (y2 - y1) / total;
+  for (let i = 0; i < count; i++) {
+    const sx = x1 + dx * (i * segLen);
+    const sy = y1 + dy * (i * segLen);
+    const ex = sx + dx * dashLen;
+    const ey = sy + dy * dashLen;
+    g.appendChild(rc.line(sx, sy, ex, ey, {
+      stroke: opts.color || '#8a8a8a', strokeWidth: 1.3, roughness: 0.7,
+    }));
+  }
+  return g;
+}
+
+// =====================================================================
+// DIAGRAM 1 — TOPOLOGY
+// =====================================================================
+function drawTopology() {
+  const svg = document.getElementById('svg-topology');
+  const rc  = rough.svg(svg);
+
+  // Big enclosing dashed box: "OS-Baka 管理节点 (Docker host)"
+  dashedLine(rc, svg,  60,  60, 1220, 60);
+  dashedLine(rc, svg, 1220, 60, 1220, 470);
+  dashedLine(rc, svg, 1220, 470,  60, 470);
+  dashedLine(rc, svg,  60, 470,  60, 60);
+  svgText(svg, 80, 48, 'OS-Baka 管理节点 (Docker host)', { anchor: 'start', size: 18, color: '#6b6b6b' });
+
+  // Top row: Frontend → Backend → PXE-services
+  box(rc, svg, 120, 110, 260, 130, 'Frontend\nReact 19 + Vite\n:3000', {
+    fill: '#dbeafe',
+    tooltip: 'Single-page app. Dev: Vite hot reload. Prod: nginx serves /dist/. Talks to backend via Axios + JWT in localStorage.',
+  });
+  box(rc, svg, 510, 110, 260, 130, 'Backend\nGo 1.24 + Gin\n:8000', {
+    fill: '#fef3c7',
+    tooltip: 'Single binary. Startup: load config → migrate → seed → start scheduler/watchers → bind :8000. All /api/v1/* routes here.',
+  });
+  box(rc, svg, 900, 110, 280, 130, 'PXE-services\ndnsmasq + TFTP + iPXE\nhost network', {
+    fill: '#d1fae5',
+    tooltip: 'Alpine container, host network mode. dnsmasq serves DHCP+TFTP. start.sh polls /etc/dnsmasq.d/.reload every 2s and SIGHUPs dnsmasq.',
+  });
+
+  // Second row: Postgres + shared volumes between Backend and PXE
+  box(rc, svg, 510, 320, 260, 110, 'Postgres 15\n:5432', {
+    fill: '#fce7f3',
+    tooltip: 'Single instance. golang-migrate (6 migrations applied). No replica / no PITR — control-plane workload tradeoff.',
+  });
+  box(rc, svg, 820, 290, 180, 60, '/etc/dnsmasq.d', {
+    fill: '#ede9fe', size: 16, lineHeight: 18,
+    tooltip: 'Shared docker volume. Backend writes 00-main.conf + 01-hosts.conf + .reload trigger; PXE-services reads via poll loop.',
+  });
+  box(rc, svg, 820, 370, 180, 60, '/tftpboot', {
+    fill: '#ede9fe', size: 16, lineHeight: 18,
+    tooltip: 'Shared docker volume. PXE-services serves files over TFTP; backend uploads boot assets here via /api/v1/assets/boot.',
+  });
+
+  // Arrows
+  arrow(rc, svg, 380, 175, 510, 175, { label: 'JSON\n/api/v1', labelSize: 15 });
+  arrow(rc, svg, 770, 175, 900, 175, { label: 'shared vols', labelSize: 15 });
+  arrow(rc, svg, 640, 240, 640, 320, { label: 'gorm', labelSize: 15 });
+  arrow(rc, svg, 770, 320, 820, 320, { color: '#8a8a8a', width: 1.4, label: 'writes', labelSize: 14 });
+  arrow(rc, svg, 900, 240, 820, 290, { color: '#8a8a8a', width: 1.4 });
+  arrow(rc, svg, 900, 290, 820, 400, { color: '#8a8a8a', width: 1.4 });
+
+  // Network divider (PXE subnet)
+  rc.line(60, 510, 1220, 510, { stroke: '#8a8a8a', strokeWidth: 1.5, roughness: 0.6 });
+  svg.appendChild(rc.line(60, 510, 1220, 510, { stroke: '#8a8a8a', strokeWidth: 1.5, roughness: 0.6 }));
+  svgText(svg, 640, 502, '── PXE 网段 / DHCP + TFTP + HTTP ──', { color: '#6b6b6b', size: 16 });
+
+  // Bare-metal nodes
+  const ny = 560;
+  const nw = 200;
+  const gap = 50;
+  const totalWidth = 4 * nw + 3 * gap; // = 950
+  const startX = (1280 - totalWidth) / 2; // = 165
+  for (let i = 0; i < 4; i++) {
+    const nx = startX + i * (nw + gap);
+    box(rc, svg, nx, ny, nw, 140, `Node ${i+1}\nPXE Boot\n` + (i < 3 ? 'LUKS + TPM2' : 'LUKS only'), {
+      fill: i % 2 ? '#fef3c7' : '#dbeafe',
+      tooltip: 'Bare-metal server. Bootstraps via PXE → installs Debian via preseed → calls back to backend on first boot.',
+    });
+    // Wire from PXE-net divider to node top
+    arrow(rc, svg, nx + nw / 2, 510, nx + nw / 2, ny, { color: '#8a8a8a', width: 1.4, headLen: 10 });
+  }
+
+  // Single IPMI band — cleaner than 4 fan-out lines
+  dashedLine(rc, svg, 640, 430, 640, 770, { color: '#c75a5a' });
+  dashedLine(rc, svg, 200, 770, 1080, 770, { color: '#c75a5a' });
+  svgText(svg, 640, 790, 'IPMI BMC band ── backend 通过 ipmitool 触发 power cycle ──', {
+    size: 16, color: '#c75a5a',
+  });
+}
+
+// =====================================================================
+// DIAGRAM 2 — PXE SEQUENCE
+// =====================================================================
+function drawPxeSequence() {
+  const svg = document.getElementById('svg-pxe');
+  const rc  = rough.svg(svg);
+
+  // 5 swimlanes
+  const lanes = [
+    { label: 'Node',     x: 120, color: '#dbeafe' },
+    { label: 'dnsmasq',  x: 380, color: '#d1fae5' },
+    { label: 'Backend',  x: 680, color: '#fef3c7' },
+    { label: 'DB',       x: 960, color: '#fce7f3' },
+    { label: 'Mirror',   x: 1240, color: '#ede9fe' },
+  ];
+  // Header boxes
+  lanes.forEach(l => {
+    box(rc, svg, l.x - 80, 30, 160, 50, l.label, {
+      fill: l.color, size: 22, weight: 'bold',
+    });
+    dashedLine(rc, svg, l.x, 90, l.x, 1260, { color: '#8a8a8a' });
+  });
+
+  function step(fromIdx, toIdx, y, label, opts = {}) {
+    const x1 = lanes[fromIdx].x;
+    const x2 = lanes[toIdx].x;
+    const dir = x2 > x1 ? 1 : -1;
+    arrow(rc, svg, x1 + 10 * dir, y, x2 - 10 * dir, y, {
+      label,
+      color: opts.color || '#5a4fcf',
+      labelSize: 16,
+      labelLineHeight: 19,
+    });
+  }
+
+  let y = 130;
+  const dy = 70;
+
+  step(0, 1, y, '① DHCPDISCOVER'); y += dy;
+  step(1, 0, y, 'IP + boot file\n(undionly.kpxe / ipxe.efi)'); y += dy;
+  step(0, 2, y, '② GET /pxe/boot/:mac'); y += dy;
+  step(2, 3, y, 'lookup node + IssuePXEToken'); y += dy;
+  step(2, 0, y, '③ iPXE script\n(kernel/initrd URL + ?t=<TOK>)', { color: '#e07b3f' }); y += dy;
+  step(0, 4, y, '④ GET kernel + initrd'); y += dy;
+  step(4, 0, y, 'binary blobs'); y += dy;
+  step(0, 2, y, '⑤ GET /pxe/preseed/:mac?t=<TOK>'); y += dy;
+  step(2, 3, y, 'ValidatePXEToken (no consume)'); y += dy;
+  step(2, 0, y, '⑥ preseed.cfg\n+ TPM conf (base64) + early_command'); y += dy;
+  step(0, 4, y, '⑦ apt-get install\n(base + tpm2-tools + cryptsetup)'); y += dy;
+  step(0, 2, y, '⑧ GET /pxe/postinstall/:mac?t=<TOK>\n(via late_command)'); y += dy;
+  step(2, 3, y, 'ConsumePXEToken (IP-bound)'); y += dy;
+  step(2, 0, y, '⑨ postinstall.sh'); y += dy;
+  step(0, 2, y, '⑩ PUT /internal/nodes/:id/status\n{"status":"active"}  (5× retry × 10s)', { color: '#4f9d5f' }); y += dy;
+  step(2, 3, y, 'SetNodeStatus(installing → active)\nclear installing_started_at'); y += dy;
+}
+
+// =====================================================================
+// DIAGRAM 3 — STATE MACHINE
+// =====================================================================
+function drawStateMachine() {
+  const svg = document.getElementById('svg-state');
+  const rc  = rough.svg(svg);
+
+  // 7 states laid out 4×2 — minimises diagonals so all edges are either
+  // single-segment straight lines or simple L/step routes that don't
+  // cross other boxes. Lifecycle reads top-row left-to-right
+  // (discovered → pending → installing → active), then drops to second
+  // row (error / offline / maintenance) for terminal/operator states.
+  const states = {
+    discovered:  { x:  80, y: 100, w: 200, h: 80, fill: '#d1fae5' },
+    pending:     { x: 360, y: 100, w: 200, h: 80, fill: '#dbeafe' },
+    installing:  { x: 640, y: 100, w: 200, h: 80, fill: '#fef3c7' },
+    active:      { x: 920, y: 100, w: 200, h: 80, fill: '#d1fae5' },
+    error:       { x: 360, y: 380, w: 200, h: 80, fill: '#fde2e2' },
+    offline:     { x: 640, y: 380, w: 200, h: 80, fill: '#fce7f3' },
+    maintenance: { x: 920, y: 380, w: 200, h: 80, fill: '#ede9fe' },
+  };
+
+  for (const [name, s] of Object.entries(states)) {
+    box(rc, svg, s.x, s.y, s.w, s.h, name, { fill: s.fill, size: 24, weight: 'bold' });
+  }
+
+  function center(name) {
+    const s = states[name];
+    return {
+      x: s.x + s.w / 2,
+      y: s.y + s.h / 2,
+      top: s.y, bot: s.y + s.h,
+      left: s.x, right: s.x + s.w,
+      w: s.w, h: s.h,
+    };
+  }
+  // Edge routing. For aligned pairs (same row OR same column) we draw a
+  // single straight arrow between the closest faces. For diagonal pairs
+  // we route as an L-shape: vertical segment first, then horizontal to
+  // the target, with the label on the horizontal leg. This avoids
+  // diagonals that cut through unrelated state boxes.
+  function edge(from, to, label, color, opts = {}) {
+    const a = center(from);
+    const b = center(to);
+    const sameRow = Math.abs(a.y - b.y) < 5;
+    const sameCol = Math.abs(a.x - b.x) < 5;
+
+    // For bidirectional pairs (same row or same column with twin reverse
+    // edge), offset the line to a parallel lane so the two arrows don't
+    // overlap. The opts.lane (1 or -1) chooses which side.
+    const laneOff = (opts.lane || 0) * 14;
+
+    if (sameRow) {
+      const x1 = b.x > a.x ? a.right : a.left;
+      const x2 = b.x > a.x ? b.left  : b.right;
+      arrow(rc, svg, x1, a.y + laneOff, x2, a.y + laneOff, { label, color, labelSize: 16, labelLineHeight: 18 });
+      return;
+    }
+    if (sameCol) {
+      const y1 = b.y > a.y ? a.bot : a.top;
+      const y2 = b.y > a.y ? b.top : b.bot;
+      // For lane-offset edges, also nudge the LABEL further out so two
+      // parallel lines don't have overlapping labels at the midpoint.
+      const labelNudge = (opts.lane || 0) * 50;
+      arrow(rc, svg, a.x + laneOff, y1, a.x + laneOff, y2, {
+        label, color, labelSize: 16, labelLineHeight: 18,
+        labelOffsetX: labelNudge,
+      });
+      return;
+    }
+    // Diagonal — route as a step (3 segments) through the empty corridor
+    // between the source and target rows. This avoids the horizontal leg
+    // cutting through other boxes in the target row.
+    //
+    //   source.bot → down to corridor → across to target column → down to target.top
+    //
+    const goingDown = b.y > a.y;
+    const startY = goingDown ? a.bot  : a.top;
+    const endY   = goingDown ? b.top  : b.bot;
+    // Mid-corridor: halfway between the two faces, in empty space.
+    const midY = (startY + endY) / 2;
+    const stroke = color || '#5a4fcf';
+    const w = 1.8, rgh = 1.4;
+
+    // Segment 1: vertical from source face down/up to corridor
+    svg.appendChild(rc.line(a.x, startY, a.x, midY, { stroke, strokeWidth: w, roughness: rgh }));
+    // Segment 2: horizontal across corridor to target column
+    svg.appendChild(rc.line(a.x, midY, b.x, midY, { stroke, strokeWidth: w, roughness: rgh }));
+    // Segment 3: vertical from corridor into target face, WITH arrow head
+    arrow(rc, svg, b.x, midY, b.x, endY, {
+      label, color, labelSize: 16, labelLineHeight: 18,
+    });
+  }
+
+  // operator (blue) / system success (green) / system timeout (red) / heartbeat (orange).
+  // For bidirectional pairs we use lane = ±1 to split the two arrows into parallel tracks.
+  edge('discovered',  'pending',     'operator approves',      '#4a87c7');
+  edge('pending',     'installing',  'rebuild',                '#4a87c7');
+  edge('installing',  'active',      'postinstall ✓',          '#4f9d5f');
+  edge('installing',  'error',       'timeout 120m',           '#c75a5a');
+  edge('active',      'offline',     'stale 10m →',            '#e07b3f', { lane: -1 });
+  edge('offline',     'active',      '← heartbeat ok',         '#4f9d5f', { lane:  1 });
+  edge('active',      'maintenance', 'drain →',                '#4a87c7', { lane: -1 });
+  edge('maintenance', 'active',      '← restore',              '#4a87c7', { lane:  1 });
+  edge('error',       'installing',  'rebuild',                '#4a87c7');
+
+  // Legend
+  svgText(svg, 80, 560, '— operator (blue)    — system callback (green)    — system timeout (red)    — heartbeat (orange)',
+    { anchor: 'start', size: 17, color: '#6b6b6b' });
+  svgText(svg, 80, 595, '"discovered" set ONLY by PXE auto-discover. Never set by operator/UI.',
+    { anchor: 'start', size: 17, color: '#6b6b6b' });
+  svgText(svg, 80, 630, 'discovered → active / offline 是非法转换 (节点尚未真正装机)',
+    { anchor: 'start', size: 17, color: '#c75a5a' });
+  svgText(svg, 80, 660, '布局说明:第一排是 happy path (左→右),第二排是终态 / 操作员手动管控',
+    { anchor: 'start', size: 16, color: '#6b6b6b' });
+  svgText(svg, 80, 690, '省略边:discovered → installing(operator force-install)和各 row 内的 self-transitions',
+    { anchor: 'start', size: 15, color: '#8a8a8a' });
+}
+
+// =====================================================================
+// DIAGRAM 4 — WATCHERS
+// =====================================================================
+function drawWatchers() {
+  const svg = document.getElementById('svg-watchers');
+  const rc  = rough.svg(svg);
+
+  svgText(svg, 640, 40, '三个长期 goroutine — 都在 main.go 启动时拉起',
+    { size: 19, color: '#6b6b6b' });
+
+  // Three columns laid out evenly across 1280-wide viewBox.
+  // Each column: header → query/condition → action.
+  const cols = [
+    {
+      x: 90, w: 320,
+      head:   'StaleNodeChecker\n5min ticker · 10min threshold',
+      query:  'SELECT WHERE\nstatus = active\nAND last_heartbeat < now() − 10m',
+      action: 'UPDATE → offline\naudit: node.bulk_status_change',
+      actionFill: '#fce7f3',
+    },
+    {
+      x: 480, w: 320,
+      head:   'InstallTimeoutChecker\n5min ticker · 120min threshold',
+      query:  'SELECT WHERE\nstatus = installing\nAND installing_started_at < now() − 120m',
+      action: 'UPDATE → error\n+ clear installing_started_at\naudit: node.bulk_status_change',
+      actionFill: '#fde2e2',
+    },
+    {
+      x: 870, w: 320,
+      head:   'DnsmasqScheduler\nevent-driven (Schedule())\n200ms cooldown',
+      query:  'leading + trailing coalesce\nN bursts → ≤ 2 runs',
+      action: 'atomic write 00-main + 01-hosts\n.reload trigger → pxe-services HUP',
+      actionFill: '#d1fae5',
+    },
+  ];
+  cols.forEach(c => {
+    const cx = c.x + c.w / 2;
+    box(rc, svg, c.x,  90, c.w, 110, c.head,   { fill: '#fef3c7', size: 18, lineHeight: 24 });
+    arrow(rc, svg, cx, 200, cx, 250, { color: '#8a8a8a' });
+    box(rc, svg, c.x, 260, c.w, 110, c.query,  { fill: '#ffffff', size: 16, lineHeight: 22 });
+    arrow(rc, svg, cx, 370, cx, 420, { color: '#8a8a8a' });
+    box(rc, svg, c.x, 430, c.w, 110, c.action, { fill: c.actionFill, size: 16, lineHeight: 22 });
+  });
+
+  // Bottom row notes
+  svgText(svg, 640, 615, 'LastRun / LastError / RunCount → /dashboard/summary tile',
+    { size: 18, color: '#6b6b6b' });
+  svgText(svg, 640, 660, '所有 watcher 在 graceful shutdown 时被 drain · scheduler 会等 in-flight 写盘结束',
+    { size: 18, color: '#6b6b6b' });
+}
+
+// =====================================================================
+// DIAGRAM 5 — REGISTRATION FLOW
+// =====================================================================
+function drawRegister() {
+  const svg = document.getElementById('svg-register');
+  const rc  = rough.svg(svg);
+
+  const lanes = [
+    { label: 'Operator UI',      x: 130, color: '#dbeafe' },
+    { label: 'Backend handler',  x: 430, color: '#fef3c7' },
+    { label: 'DB',               x: 720, color: '#fce7f3' },
+    { label: 'Scheduler',        x: 990, color: '#d1fae5' },
+    { label: 'dnsmasq files',    x: 1240, color: '#ede9fe' },
+  ];
+  lanes.forEach(l => {
+    box(rc, svg, l.x - 90, 30, 180, 50, l.label, { fill: l.color, size: 19, weight: 'bold' });
+    dashedLine(rc, svg, l.x, 90, l.x, 850, { color: '#8a8a8a' });
+  });
+
+  function step(fromIdx, toIdx, y, label, opts = {}) {
+    const x1 = lanes[fromIdx].x;
+    const x2 = lanes[toIdx].x;
+    const dir = x2 > x1 ? 1 : -1;
+    arrow(rc, svg, x1 + 10 * dir, y, x2 - 10 * dir, y, {
+      label,
+      color: opts.color || '#5a4fcf',
+      labelSize: 16,
+      labelLineHeight: 19,
+    });
+  }
+
+  // Self-actions: a labeled note box anchored to one side of the lane's
+  // lifeline. Default hangs to the right; for the rightmost lane(s) it
+  // flips left to stay inside the viewBox.
+  function selfNote(idx, y, label) {
+    const x = lanes[idx].x;
+    const noteW = 240;
+    const padding = 20;
+    // Flip side if there isn't room on the right.
+    const flipLeft = (x + padding + noteW) > 1380;
+    const noteX = flipLeft ? (x - padding - noteW) : (x + padding);
+    const tickX = flipLeft ? (x - padding) : (x + padding);
+    box(rc, svg, noteX, y - 22, noteW, 44, label, {
+      fill: '#fef9c3', size: 14, lineHeight: 18,
+    });
+    svg.appendChild(rc.line(x, y, tickX, y, { stroke: '#6b6b6b', strokeWidth: 1.5, roughness: 0.8 }));
+  }
+
+  let y = 130;
+  const dy = 75;
+
+  step(0, 1, y, '① POST /api/v1/nodes'); y += dy;
+  selfNote(1, y, 'validate hostname / MAC / IP /\nmirror / disk path'); y += dy;
+  selfNote(1, y, 'AES-256-GCM encrypt\npassphrase / RootPw / IPMI'); y += dy;
+  step(1, 2, y, '② INSERT nodes'); y += dy;
+  step(1, 2, y, '③ INSERT dhcp_reservations\n(auto-sync from MAC)'); y += dy;
+  step(1, 3, y, '④ ScheduleDnsmasqRegen()\n(non-blocking)'); y += dy;
+  step(1, 0, y, '⑤ 201 Created', { color: '#4f9d5f' }); y += dy;
+  step(3, 4, y, '⑥ atomic write\n00-main + 01-hosts + .reload', { color: '#e07b3f' }); y += dy;
+  // dnsmasq self-action: explain pxe-services pickup
+  selfNote(4, y, 'pxe-services start.sh 2s poll\n→ SIGHUP dnsmasq');
+}
+
+// =====================================================================
+// TAB SWITCHING + INITIAL RENDER
+// =====================================================================
+const drawnTabs = new Set();
+const drawFns = {
+  topology:      drawTopology,
+  'pxe-flow':    drawPxeSequence,
+  'state-machine': drawStateMachine,
+  watchers:      drawWatchers,
+  register:      drawRegister,
+};
+
+function activate(tab) {
+  document.querySelectorAll('nav.tabs button').forEach(b => {
+    b.classList.toggle('active', b.dataset.tab === tab);
+  });
+  document.querySelectorAll('.panel').forEach(p => {
+    p.classList.toggle('active', p.dataset.tab === tab);
+  });
+  if (!drawnTabs.has(tab) && drawFns[tab]) {
+    drawFns[tab]();
+    drawnTabs.add(tab);
+  }
+}
+
+document.querySelectorAll('nav.tabs button').forEach(b => {
+  b.addEventListener('click', () => activate(b.dataset.tab));
+});
+
+// Initial render
+activate('topology');
+</script>
+</body>
+</html>
