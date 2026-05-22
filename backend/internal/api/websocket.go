@@ -92,7 +92,7 @@ func (h *SSHHandler) HandleSSH(c *gin.Context) {
 		slog.Error("WebSocket upgrade failed", "error", err)
 		return
 	}
-	defer conn.Close()
+	defer func() { _ = conn.Close() }() // close error is irrelevant once handler returns
 
 	// Set read deadline for auth message
 	if err := conn.SetReadDeadline(time.Now().Add(30 * time.Second)); err != nil {
@@ -136,7 +136,7 @@ func (h *SSHHandler) HandleSSH(c *gin.Context) {
 		writeWSError(conn, fmt.Sprintf("SSH connection failed: %v", err))
 		return
 	}
-	defer sshConn.Close()
+	defer func() { _ = sshConn.Close() }() // SSH tear-down errors are not actionable here
 
 	// Open session
 	session, err := sshConn.NewSession()
@@ -144,7 +144,7 @@ func (h *SSHHandler) HandleSSH(c *gin.Context) {
 		writeWSError(conn, fmt.Sprintf("SSH session failed: %v", err))
 		return
 	}
-	defer session.Close()
+	defer func() { _ = session.Close() }() // session close after PTY exits — error is normal
 
 	// Request PTY
 	cols, rows := 80, 24
@@ -316,6 +316,6 @@ func ValidateSSHTarget(host string, port int) error {
 	if err != nil {
 		return fmt.Errorf("host %s is not reachable: %w", addr, err)
 	}
-	conn.Close()
+	_ = conn.Close() // probe socket close error is irrelevant
 	return nil
 }
