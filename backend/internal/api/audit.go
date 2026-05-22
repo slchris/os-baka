@@ -1,13 +1,24 @@
 package api
 
 import (
+	"context"
+	"encoding/json"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"strconv"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/os-baka/backend/internal/model"
+	"gorm.io/gorm"
 )
+
+// auditWriteTimeout caps how long an audit insert may take before we give
+// up and log a failure. Picked to be larger than any reasonable Postgres
+// round-trip but small enough that a wedged DB doesn't stall every request
+// for seconds.
+const auditWriteTimeout = 2 * time.Second
 
 // AuditHandler handles audit log endpoints.
 type AuditHandler struct{}
@@ -16,14 +27,31 @@ func NewAuditHandler() *AuditHandler {
 	return &AuditHandler{}
 }
 
-// WriteAuditLog records an audit event to the database.
-// Can be called from any handler to log important actions.
+// WriteAuditLog records an audit event to the database synchronously.
+//
+// Originally fire-and-forget via a goroutine per call. That was wrong for
+// two reasons:
+//  1. Bulk paths (e.g. CSV import of 500 nodes through CreateNode) spawned
+//     500 concurrent goroutines all racing for DB connections.
+//  2. A goroutine leaking the gin context could read c.ClientIP after the
+//     request had ended, with undefined behavior.
+//
+// A single audit insert is sub-millisecond against a properly indexed
+// table; making it synchronous is correct. A bounded timeout protects
+// against a wedged DB stalling the request.
+//
+// On failure we log slog.Error and return — the user's action already
+// succeeded by the time we get here, so propagating the audit-write
+// error would only confuse them.
 func WriteAuditLog(c *gin.Context, action, resource, resourceID, details string) {
 	userID, _ := GetAuthUserID(c)
 	username := GetAuthUsername(c)
 	if username == "" {
 		username = "system"
 	}
+	// Capture client IP now — c may be reused / pooled after the request
+	// completes, so we must not call methods on it past this point.
+	clientIP := c.ClientIP()
 
 	log := model.AuditLog{
 		Action:     action,
@@ -32,13 +60,94 @@ func WriteAuditLog(c *gin.Context, action, resource, resourceID, details string)
 		Resource:   resource,
 		ResourceID: resourceID,
 		Details:    details,
-		IPAddress:  c.ClientIP(),
+		IPAddress:  clientIP,
 	}
 
-	// Fire-and-forget: don't block the request for audit logging
-	go func() {
-		_ = getDB().Create(&log).Error
-	}()
+	writeAuditLogSync(getDB(), &log)
+}
+
+// WriteAuditLogs persists multiple audit entries in batches. Used by
+// high-volume paths (bulk delete, CSV import) to avoid N round-trips.
+// Each entry must already have its fields filled — this function does
+// not consult the gin context.
+func WriteAuditLogs(logs []model.AuditLog) {
+	if len(logs) == 0 {
+		return
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), auditWriteTimeout)
+	defer cancel()
+	// Batch size 100 chosen to keep each round-trip well under a TCP MTU's
+	// worth of bind parameters (PG's 16-bit param count gives us plenty of
+	// headroom but smaller batches mean smaller retries on partial failure).
+	const batchSize = 100
+	if err := getDB().WithContext(ctx).CreateInBatches(logs, batchSize).Error; err != nil {
+		slog.Error("audit: batch write failed",
+			"count", len(logs),
+			"error", err)
+	}
+}
+
+// writeAuditLogSync is the shared synchronous path with a bounded timeout.
+// Errors are logged but never returned — audit logging must not break the
+// user-facing action that triggered it. A nil db is also a no-op rather
+// than a panic: it can happen in tests that exercise handlers without
+// initializing storage, or if a goroutine outlives InitHandlers shutdown
+// somehow.
+func writeAuditLogSync(db *gorm.DB, log *model.AuditLog) {
+	if db == nil {
+		slog.Warn("audit: write skipped (db not initialized)",
+			"action", log.Action,
+			"resource", log.Resource,
+			"resource_id", log.ResourceID)
+		return
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), auditWriteTimeout)
+	defer cancel()
+	if err := db.WithContext(ctx).Create(log).Error; err != nil {
+		slog.Error("audit: write failed",
+			"action", log.Action,
+			"resource", log.Resource,
+			"resource_id", log.ResourceID,
+			"error", err)
+	}
+}
+
+// nodeDeleteSnapshot is the structured payload embedded into audit log
+// details when a node row is destroyed. After deletion the node table
+// no longer has any record of the physical machine, so the audit log is
+// the only place to find out what was removed. Keep it small and stable —
+// readers may parse it.
+type nodeDeleteSnapshot struct {
+	ID         uint   `json:"id"`
+	Hostname   string `json:"hostname"`
+	MACAddress string `json:"mac_address"`
+	IPAddress  string `json:"ip_address"`
+	AssetTag   string `json:"asset_tag,omitempty"`
+	GroupID    *uint  `json:"group_id,omitempty"`
+	Status     string `json:"status,omitempty"`
+}
+
+// makeNodeDeleteSnapshot builds the structured details string for a node
+// deletion audit entry. Returns valid JSON even for a zero-value node so
+// callers don't have to nil-check.
+func makeNodeDeleteSnapshot(n *model.Node) string {
+	snap := nodeDeleteSnapshot{
+		ID:         n.ID,
+		Hostname:   n.Hostname,
+		MACAddress: n.MACAddress,
+		IPAddress:  n.IPAddress,
+		AssetTag:   n.AssetTag,
+		GroupID:    n.GroupID,
+		Status:     n.Status,
+	}
+	b, err := json.Marshal(snap)
+	if err != nil {
+		// Shouldn't happen — the struct is JSON-safe. Fall back to a
+		// minimal text representation so we don't lose ALL traceability.
+		return fmt.Sprintf("node id=%d hostname=%q mac=%q (json marshal failed: %v)",
+			n.ID, n.Hostname, n.MACAddress, err)
+	}
+	return string(b)
 }
 
 // ListAuditLogs godoc

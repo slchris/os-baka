@@ -180,9 +180,15 @@ export const Dashboard: React.FC = () => {
                 ok={summary?.dnsmasq_running ?? false}
               />
               <HealthItem
-                label="Secret Store"
-                value={summary?.vault_backend === 'vault' ? 'HashiCorp Vault' : summary?.vault_backend === 'database' ? 'Database (Fallback)' : 'Unknown'}
-                ok={summary?.vault_backend === 'vault' || summary?.vault_backend === 'database'}
+                label="DNSMasq Config Sync"
+                value={
+                  summary?.dnsmasq_last_error
+                    ? `Error: ${summary.dnsmasq_last_error}`
+                    : summary?.dnsmasq_last_run
+                      ? `OK (${summary.dnsmasq_run_count} runs)`
+                      : 'Idle'
+                }
+                ok={!summary?.dnsmasq_last_error}
               />
             </div>
           </div>

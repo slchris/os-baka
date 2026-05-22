@@ -3,6 +3,7 @@ package api
 import (
 	"net/http"
 	"os/exec"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/os-baka/backend/internal/model"
@@ -46,22 +47,26 @@ func (h *DashboardHandler) Summary(c *gin.Context) {
 	var recentLogs []model.AuditLog
 	getDB().Order("created_at DESC").Limit(10).Find(&recentLogs)
 
-	// Vault status
-	vaultType := "unknown"
-	if store := getSecretStore(); store != nil {
-		vaultType = store.Type()
+	// dnsmasq scheduler state — last_run is RFC3339 (omitted when zero so
+	// the UI can render "—" instead of an epoch).
+	lastRun, lastError, runCount := DnsmasqStats()
+	dnsmasqLastRun := ""
+	if !lastRun.IsZero() {
+		dnsmasqLastRun = lastRun.UTC().Format(time.RFC3339)
 	}
 
 	c.JSON(http.StatusOK, gin.H{
-		"nodes_total":      nodesTotal,
-		"nodes_active":     nodesActive,
-		"nodes_error":      nodesError,
-		"nodes_installing": nodesInstalling,
-		"nodes_encrypted":  nodesEncrypted,
-		"users_total":      usersTotal,
-		"dnsmasq_running":  dnsmasqRunning,
-		"vault_backend":    vaultType,
-		"recent_activity":  recentLogs,
+		"nodes_total":         nodesTotal,
+		"nodes_active":        nodesActive,
+		"nodes_error":         nodesError,
+		"nodes_installing":    nodesInstalling,
+		"nodes_encrypted":     nodesEncrypted,
+		"users_total":         usersTotal,
+		"dnsmasq_running":     dnsmasqRunning,
+		"dnsmasq_last_run":    dnsmasqLastRun,
+		"dnsmasq_last_error":  lastError,
+		"dnsmasq_run_count":   runCount,
+		"recent_activity":     recentLogs,
 	})
 }
 

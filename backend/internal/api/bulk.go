@@ -3,6 +3,7 @@ package api
 import (
 	"fmt"
 	"net/http"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/os-baka/backend/internal/model"
@@ -36,17 +37,39 @@ func (h *BulkHandler) BulkRebuild(c *gin.Context) {
 		return
 	}
 
+	// Bulk path: skip per-row legal-transition checking since the operator
+	// explicitly selected these nodes. Both columns updated in one shot so
+	// installing_started_at stays in sync with status for the timeout
+	// watcher. A single audit log captures the batch — per-node entries
+	// would flood the audit table for large rebuilds.
 	result := getDB().Model(&model.Node{}).
 		Where("id IN ?", req.IDs).
-		Update("status", "installing")
+		Updates(map[string]any{
+			"status":                NodeStatusInstalling,
+			"installing_started_at": time.Now().UTC(),
+		})
 
 	WriteAuditLog(c, "node.bulk_rebuild", "node", fmt.Sprintf("%v", req.IDs),
 		fmt.Sprintf("Rebuilt %d nodes", result.RowsAffected))
 
+	// Auto power-cycle: re-fetch the rows so we have IPMI fields, then
+	// fan out cycles through the bounded semaphore. Caller can opt out
+	// of cycling with ?no_power_cycle=1 (e.g. during incident response
+	// when you want to control reboots manually).
+	powerCycleTally := map[string]int{}
+	if c.Query("no_power_cycle") != "1" {
+		var nodes []model.Node
+		getDB().Where("id IN ?", req.IDs).Find(&nodes)
+		powerCycleTally = TriggerPowerCycleBatch(nodes)
+	} else {
+		powerCycleTally["skipped:opted_out"] = len(req.IDs)
+	}
+
 	c.JSON(http.StatusOK, gin.H{
-		"success":  true,
-		"affected": result.RowsAffected,
-		"message":  fmt.Sprintf("%d nodes set to rebuilding", result.RowsAffected),
+		"success":     true,
+		"affected":    result.RowsAffected,
+		"message":     fmt.Sprintf("%d nodes set to rebuilding", result.RowsAffected),
+		"power_cycle": powerCycleTally,
 	})
 }
 
@@ -67,7 +90,9 @@ func (h *BulkHandler) BulkDelete(c *gin.Context) {
 		return
 	}
 
-	// Get MACs for DHCP cleanup
+	// Read all nodes BEFORE deletion so the audit log retains
+	// hostname/MAC/IP after the rows are gone. This is the only place
+	// that survives the destructive action.
 	var nodes []model.Node
 	getDB().Where("id IN ?", req.IDs).Find(&nodes)
 
@@ -89,14 +114,34 @@ func (h *BulkHandler) BulkDelete(c *gin.Context) {
 	// Delete nodes
 	result := getDB().Delete(&model.Node{}, req.IDs)
 
+	// One audit entry per deleted node, written in a single batch INSERT.
+	// Each row carries the full snapshot in details so we can answer
+	// "which physical machine was that?" after the fact.
+	auditUserID, _ := GetAuthUserID(c)
+	auditUsername := GetAuthUsername(c)
+	if auditUsername == "" {
+		auditUsername = "system"
+	}
+	clientIP := c.ClientIP()
+	auditLogs := make([]model.AuditLog, 0, len(nodes))
+	for i := range nodes {
+		auditLogs = append(auditLogs, model.AuditLog{
+			Action:     "node.delete",
+			UserID:     auditUserID,
+			Username:   auditUsername,
+			Resource:   "node",
+			ResourceID: fmt.Sprintf("%d", nodes[i].ID),
+			Details:    makeNodeDeleteSnapshot(&nodes[i]),
+			IPAddress:  clientIP,
+		})
+	}
+	WriteAuditLogs(auditLogs)
+
+	// Rollup entry — useful for "show me bulk operations" queries.
 	WriteAuditLog(c, "node.bulk_delete", "node", fmt.Sprintf("%v", req.IDs),
 		fmt.Sprintf("Deleted %d nodes", result.RowsAffected))
 
-	// Regen dnsmasq
-	if err := GenerateDnsmasqConfig(); err != nil {
-		// Non-fatal
-		_ = err
-	}
+	ScheduleDnsmasqRegen()
 
 	c.JSON(http.StatusOK, gin.H{
 		"success":  true,

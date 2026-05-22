@@ -235,7 +235,9 @@ export interface DashboardSummary {
   nodes_encrypted: number;
   users_total: number;
   dnsmasq_running: boolean;
-  vault_backend: string;
+  dnsmasq_last_run: string;   // RFC3339 timestamp, empty when scheduler has never run
+  dnsmasq_last_error: string; // empty when the last scheduled regen succeeded
+  dnsmasq_run_count: number;
   recent_activity: AuditLogItem[];
 }
 

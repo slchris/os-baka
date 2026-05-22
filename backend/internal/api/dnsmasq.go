@@ -1,29 +1,118 @@
 package api
 
 import (
+	"errors"
 	"fmt"
+	"log/slog"
 	"os"
+	"path/filepath"
 	"strings"
+	"sync/atomic"
 
 	"github.com/os-baka/backend/internal/model"
 )
 
-const dnsmasqHostsDir = "/etc/dnsmasq.d"
-const dnsmasqMainConfig = "/etc/dnsmasq.d/00-main.conf"
-const dnsmasqHostsConfig = "/etc/dnsmasq.d/01-hosts.conf"
+// dnsmasq config paths. Declared as var (not const) so tests can redirect
+// to a tempdir without bringing the entire /etc/dnsmasq.d hierarchy along.
+// Don't mutate at runtime outside tests.
+var (
+	dnsmasqHostsDir      = "/etc/dnsmasq.d"
+	dnsmasqMainConfig    = "/etc/dnsmasq.d/00-main.conf"
+	dnsmasqHostsConfig   = "/etc/dnsmasq.d/01-hosts.conf"
+	dnsmasqReloadTrigger = "/etc/dnsmasq.d/.reload"
+)
 
-// GenerateDnsmasqConfig generates the complete dnsmasq configuration
+// dnsmasqMissingDirWarned is flipped after the first "directory doesn't
+// exist" warning so dev mode (where /etc/dnsmasq.d is not bind-mounted)
+// doesn't log on every scheduled regen.
+var dnsmasqMissingDirWarned atomic.Bool
+
+// GenerateDnsmasqConfig regenerates the full dnsmasq configuration on disk.
+// Returns a non-nil error if either the main or hosts file write failed.
+// Callers must NOT swallow the error: surface it to the user when running
+// in response to an explicit user action, or feed it into the dnsmasq
+// scheduler's LastError so operators can see something is wrong.
+//
+// Trigger semantics: the .reload sentinel is written exactly once, AFTER
+// both config files have been atomically renamed into place. This avoids
+// a race where the pxe-services watcher (`start.sh`) reads .reload and
+// HUPs dnsmasq while the hosts file is still mid-write. Without the
+// sentinel-last ordering, dnsmasq could load a half-written hosts config.
 func GenerateDnsmasqConfig() error {
-	// Generate main config
+	// Dev / local builds typically don't have /etc/dnsmasq.d bind-mounted
+	// in. Treat the missing-directory case as a benign no-op so the
+	// dashboard's "DNSMasq Config Sync" tile doesn't flag permanent red.
+	if _, err := os.Stat(dnsmasqHostsDir); os.IsNotExist(err) {
+		if !dnsmasqMissingDirWarned.Swap(true) {
+			slog.Info("dnsmasq: config dir not present, skipping regen (dev mode?)",
+				"dir", dnsmasqHostsDir)
+		}
+		return nil
+	}
+
+	var errs []error
 	if err := generateMainConfig(); err != nil {
-		fmt.Printf("Warning: Could not generate main dnsmasq config: %v\n", err)
+		slog.Warn("dnsmasq: main config generation failed", "error", err)
+		errs = append(errs, fmt.Errorf("main config: %w", err))
 	}
-
-	// Generate hosts config
 	if err := generateHostsConfig(); err != nil {
-		fmt.Printf("Warning: Could not generate hosts dnsmasq config: %v\n", err)
+		slog.Warn("dnsmasq: hosts config generation failed", "error", err)
+		errs = append(errs, fmt.Errorf("hosts config: %w", err))
 	}
 
+	// Only signal reload if at least one file write succeeded. If both
+	// failed, the on-disk state is whatever it was before — pointless to
+	// HUP dnsmasq for no change. The watcher polls every 2s so failure
+	// to signal here is recoverable on the next successful regen.
+	if len(errs) < 2 {
+		if err := os.WriteFile(dnsmasqReloadTrigger, []byte("reload"), 0644); err != nil {
+			slog.Warn("dnsmasq: reload trigger write failed", "error", err)
+		}
+	}
+	return errors.Join(errs...)
+}
+
+// writeFileAtomic writes data to a fresh tempfile in the same directory as
+// path, fsyncs it, then renames over the target. The pxe-services watcher
+// polls every 2s and HUPs dnsmasq when it sees .reload — without an atomic
+// swap, dnsmasq could be HUP'd into reading a half-written file.
+//
+// We use the same directory for the tempfile so rename stays atomic
+// (cross-device rename would degrade to copy+unlink and lose atomicity).
+func writeFileAtomic(path string, data []byte, perm os.FileMode) (retErr error) {
+	dir := filepath.Dir(path)
+	tmp, err := os.CreateTemp(dir, filepath.Base(path)+".tmp.*")
+	if err != nil {
+		return fmt.Errorf("create temp: %w", err)
+	}
+	tmpName := tmp.Name()
+	defer func() {
+		if retErr != nil {
+			// Best-effort cleanup. If this fails we'll just leave a stray
+			// .tmp file — better than partial config in place.
+			if err := os.Remove(tmpName); err != nil && !os.IsNotExist(err) {
+				slog.Warn("dnsmasq: tempfile cleanup failed", "path", tmpName, "error", err)
+			}
+		}
+	}()
+
+	if _, err := tmp.Write(data); err != nil {
+		_ = tmp.Close()
+		return fmt.Errorf("write temp: %w", err)
+	}
+	if err := tmp.Sync(); err != nil {
+		_ = tmp.Close()
+		return fmt.Errorf("fsync temp: %w", err)
+	}
+	if err := tmp.Close(); err != nil {
+		return fmt.Errorf("close temp: %w", err)
+	}
+	if err := os.Chmod(tmpName, perm); err != nil {
+		return fmt.Errorf("chmod temp: %w", err)
+	}
+	if err := os.Rename(tmpName, path); err != nil {
+		return fmt.Errorf("rename: %w", err)
+	}
 	return nil
 }
 
@@ -124,7 +213,6 @@ func generateMainConfig() error {
 		}
 		// Use static external IP from environment if available (robust Docker default)
 		extIP := os.Getenv("EXTERNAL_IP")
-		fmt.Printf("DEBUG: EXTERNAL_IP env var: '%s'\n", extIP)
 		if serverIP == "" {
 			serverIP = extIP
 		}
@@ -147,14 +235,11 @@ func generateMainConfig() error {
 	content.WriteString("# Logging\n")
 	content.WriteString("log-dhcp\n")
 
-	// Write to file
-	if err := os.WriteFile(dnsmasqMainConfig, []byte(content.String()), 0644); err != nil {
+	// Atomic write: tempfile + rename. The reload trigger is the caller's
+	// responsibility (see GenerateDnsmasqConfig) — writing it from here
+	// would race the hosts-config write that follows.
+	if err := writeFileAtomic(dnsmasqMainConfig, []byte(content.String()), 0644); err != nil {
 		return err
-	}
-
-	// Create reload trigger file
-	if err := os.WriteFile(dnsmasqHostsDir+"/.reload", []byte("reload"), 0644); err != nil {
-		fmt.Printf("Warning: Could not create reload trigger: %v\n", err)
 	}
 
 	return nil
@@ -221,20 +306,10 @@ func generateHostsConfig() error {
 		nodeReservations++
 	}
 
-	// Write to file
-	if err := os.WriteFile(dnsmasqHostsConfig, []byte(content.String()), 0644); err != nil {
+	if err := writeFileAtomic(dnsmasqHostsConfig, []byte(content.String()), 0644); err != nil {
 		return err
 	}
 
 	return nil
 }
 
-// UpdateDnsmasqForNode updates the dnsmasq config after a node is added/modified
-func UpdateDnsmasqForNode(node *model.Node) error {
-	return GenerateDnsmasqConfig()
-}
-
-// RemoveDnsmasqForNode updates the dnsmasq config after a node is deleted
-func RemoveDnsmasqForNode(node *model.Node) error {
-	return GenerateDnsmasqConfig()
-}

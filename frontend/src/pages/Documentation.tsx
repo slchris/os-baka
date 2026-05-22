@@ -67,7 +67,7 @@ export const Documentation: React.FC = () => {
             </p>
             <ul className="list-disc list-inside space-y-2 text-gray-600 dark:text-gray-300 ml-2">
               <li><strong>Slot 0:</strong> TPM2 bound key (Auto-unlock if PCRs match).</li>
-              <li><strong>Slot 1:</strong> Recovery passphrase (stored in Vault).</li>
+              <li><strong>Slot 1:</strong> Recovery passphrase (AES-256-GCM encrypted in the database).</li>
               <li><strong>Slot 2:</strong> USB Keyfile (Optional, physical token).</li>
             </ul>
           </section>
