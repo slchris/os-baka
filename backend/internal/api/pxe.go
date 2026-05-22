@@ -74,11 +74,129 @@ func resolveMirror(osType, nodeMirror, dbMirror string) string {
 	return "http://archive.ubuntu.com/ubuntu"
 }
 
+// resolveSecurityMirror returns the URL of the security archive for the
+// given OS type. Same precedence as resolveMirror:
+//
+//   1) Node-specific (node.SecurityMirrorURL)
+//   2) OS-specific env (PXE_DEBIAN_SECURITY_MIRROR_URL, PXE_UBUNTU_SECURITY_MIRROR_URL)
+//   3) Active DHCPConfig.SecurityMirrorURL
+//   4) Built-in distro default
+//
+// Why this exists separately from resolveMirror: on Debian and Ubuntu the
+// security archive lives on a different host than the main archive (e.g.
+// security.debian.org vs deb.debian.org). The old code just appended
+// "-security" to the main mirror path, which produced 404s like
+// http://deb.debian.org/debian-security.
+//
+// Intranet operators typically mirror both archives under the same host
+// (`http://mirror.intra/debian` + `http://mirror.intra/debian-security`)
+// and set this via DHCPConfig.SecurityMirrorURL.
+//
+// Returns the empty string if no mirror is determinable for an unknown
+// OS — caller should skip emitting security_host/security_path in that
+// case rather than guess.
+func resolveSecurityMirror(osType, nodeMirror, dbMirror string) string {
+	trim := func(s string) string {
+		return strings.TrimRight(strings.TrimSpace(s), "/")
+	}
+
+	if v := trim(nodeMirror); v != "" {
+		return v
+	}
+
+	switch strings.ToLower(osType) {
+	case "debian":
+		if v := trim(os.Getenv("PXE_DEBIAN_SECURITY_MIRROR_URL")); v != "" {
+			return v
+		}
+		if dbMirror != "" {
+			return trim(dbMirror)
+		}
+		return "http://security.debian.org/debian-security"
+
+	case "ubuntu", "linux":
+		if v := trim(os.Getenv("PXE_UBUNTU_SECURITY_MIRROR_URL")); v != "" {
+			return v
+		}
+		if dbMirror != "" {
+			return trim(dbMirror)
+		}
+		return "http://security.ubuntu.com/ubuntu"
+	}
+
+	// Unknown OS: caller should treat empty as "skip security mirror".
+	return ""
+}
+
+// isValidMirrorURL reports whether s is a plausible mirror URL. Empty is
+// NOT valid here — callers gate the check with an "empty means default"
+// branch. Accepts http and https schemes with a non-empty host (port
+// optional). Rejects garbage, file://, relative URLs, etc.
+//
+// Loose intentionally: anything d-i can later resolve is fine. We trust
+// the installer to report a hard failure if the mirror is unreachable.
+func isValidMirrorURL(s string) bool {
+	if s == "" {
+		return false
+	}
+	u, err := url.Parse(s)
+	if err != nil {
+		return false
+	}
+	if u.Scheme != "http" && u.Scheme != "https" {
+		return false
+	}
+	if u.Host == "" {
+		return false
+	}
+	return true
+}
+
+// splitMirrorURL parses a mirror URL into the (host, path) pair preseed's
+// apt-setup wants. `mirror/http/hostname` and `apt-setup/security_host`
+// take a bare host (with optional :port); `mirror/http/directory` and
+// `apt-setup/security_path` take a path beginning with /.
+//
+// Returns ("", "/") for empty input so callers can render the lines
+// without nil-handling churn — the resulting preseed lines will be
+// inert (empty host = installer falls back to its own default).
+func splitMirrorURL(raw string) (host, path string) {
+	if raw == "" {
+		return "", "/"
+	}
+	u, err := url.Parse(raw)
+	if err != nil || u.Host == "" {
+		return "", "/"
+	}
+	path = u.Path
+	if path == "" {
+		path = "/"
+	}
+	return u.Host, path
+}
+
 // normalizeMac converts MAC address to standard format (lowercase, colon-separated)
 func normalizeMac(mac string) string {
 	// Handle hyphen format from iPXE (aa-bb-cc-dd-ee-ff)
 	mac = strings.ReplaceAll(mac, "-", ":")
 	return strings.ToLower(mac)
+}
+
+// resolveNodePassphrase returns the plaintext LUKS passphrase for a node by
+// decrypting the AES-GCM ciphertext stored on the Node row. Returns
+// ("", error) when the field is empty — callers MUST treat this as fatal and
+// refuse to serve preseed; otherwise the installer would write garbage as
+// the actual LUKS password and brick the box.
+func resolveNodePassphrase(node *model.Node) (string, error) {
+	raw := strings.TrimSpace(node.EncryptionPassphrase)
+	if raw == "" {
+		return "", fmt.Errorf("no passphrase stored for node %d", node.ID)
+	}
+	plain := DecryptField(raw)
+	if plain == "" {
+		return "", fmt.Errorf("decrypted passphrase is empty for node %d", node.ID)
+	}
+	return plain, nil
 }
 
 // getPublicServerIP returns the reachable IP/Hostname of the server
@@ -160,16 +278,40 @@ func (h *PXEHandler) BootScript(c *gin.Context) {
 	var node model.Node
 	nodeFound := getDB().Where("LOWER(mac_address) = ?", mac).First(&node).Error == nil
 
-	// If menu is forced or node not found, render a lightweight test menu to avoid blank screen during troubleshooting
-	if menuForced || !nodeFound {
+	// Auto-discover: when an unknown MAC PXE-boots, create a `discovered`
+	// row so operators see it in inventory. The row's status (discovered,
+	// distinct from pending) means BootScript won't auto-install it — the
+	// machine sees the test menu and waits for operator approval.
+	discoveredJustNow := false
+	if !nodeFound && !menuForced {
+		if discovered, isNew := discoverNode(getDB(), mac, c.ClientIP()); discovered != nil {
+			node = *discovered
+			nodeFound = true
+			discoveredJustNow = isNew
+		}
+	}
+
+	// Discovered nodes never install via PXE — they need operator approval
+	// first. Render the test menu the same way as truly-unknown MACs do.
+	if menuForced || !nodeFound || node.Status == NodeStatusDiscovered {
 		var b strings.Builder
 		b.WriteString("#!ipxe\n")
 		b.WriteString("isset ${net0/ip} || dhcp\n")
-		b.WriteString("menu OS-Baka PXE Test Menu\n")
-		b.WriteString("item auto   Auto provision (backend rules)\n")
+		switch {
+		case discoveredJustNow:
+			b.WriteString("echo OS-Baka: new node REGISTERED as discovered (node ID " + fmt.Sprintf("%d", node.ID) + ")\n")
+			b.WriteString("echo OS-Baka: set OS config in the UI, then click Rebuild to install\n")
+			b.WriteString("menu OS-Baka — newly discovered\n")
+		case node.Status == NodeStatusDiscovered:
+			b.WriteString("echo OS-Baka: node already discovered, awaiting operator approval\n")
+			b.WriteString("menu OS-Baka — awaiting approval\n")
+		default:
+			b.WriteString("menu OS-Baka PXE Test Menu\n")
+		}
+		b.WriteString("item auto   Re-check backend (chain through again)\n")
 		b.WriteString("item local  Boot from local disk\n")
 		b.WriteString("item shell  iPXE shell\n")
-		b.WriteString("choose --timeout 15000 --default auto target && goto ${target} || goto shell\n")
+		b.WriteString("choose --timeout 15000 --default local target && goto ${target} || goto shell\n")
 		fmt.Fprintf(&b, "\n:auto\nchain %s/api/v1/pxe/boot/${net0/mac}?menu=0 || goto shell\n", backendURL)
 		b.WriteString("\n:local\n")
 		b.WriteString("sanboot --no-describe --drive 0x80 || goto shell\n")
@@ -197,6 +339,21 @@ func (h *PXEHandler) BootScript(c *gin.Context) {
 	var script strings.Builder
 	script.WriteString("#!ipxe\n")
 
+	// Mint a fresh provisioning token for this install attempt. It is
+	// embedded in the preseed/postinstall URLs so downstream fetches can be
+	// authorized. Failure to mint is fatal — without a token, Preseed will
+	// refuse to serve secrets.
+	var preseedQuery string
+	if (node.Status == "installing" || node.Status == "pending") && pxeTokenRequired() {
+		token, err := IssuePXEToken(getDB(), node.ID, c.ClientIP())
+		if err != nil {
+			slog.Error("Failed to issue PXE token", "nodeID", node.ID, "error", err)
+			c.String(http.StatusInternalServerError, "# Failed to mint provisioning token")
+			return
+		}
+		preseedQuery = "?t=" + token
+	}
+
 	switch node.Status {
 	case "installing", "pending":
 		// Generate installation script based on OS type
@@ -212,9 +369,9 @@ func (h *PXEHandler) BootScript(c *gin.Context) {
 			fmt.Fprintf(&script, `set base-url %s
 kernel ${base-url}/linux
 initrd ${base-url}/initrd.gz
-imgargs linux auto=true priority=critical url=%s/api/v1/pxe/preseed/${net0/mac:hexhyp} hostname=%s domain=os-baka.local interface=auto netcfg/dhcp_timeout=60%s
+imgargs linux auto=true priority=critical url=%s/api/v1/pxe/preseed/${net0/mac:hexhyp}%s hostname=%s domain=os-baka.local interface=auto netcfg/dhcp_timeout=60%s
 boot || shell
-`, fullURL, backendURL, node.Hostname, extraArgs)
+`, fullURL, backendURL, preseedQuery, node.Hostname, extraArgs)
 
 		case "debian":
 			baseMirror := resolveMirror(node.OSType, node.MirrorURL, mirrorURL)
@@ -227,9 +384,9 @@ boot || shell
 			fmt.Fprintf(&script, `set base-url %s
 kernel ${base-url}/linux
 initrd ${base-url}/initrd.gz
-imgargs linux auto=true priority=critical url=%s/pxe/preseed/${net0/mac:hexhyp} hostname=%s domain=os-baka.local interface=auto netcfg/dhcp_timeout=60%s
+imgargs linux auto=true priority=critical url=%s/api/v1/pxe/preseed/${net0/mac:hexhyp}%s hostname=%s domain=os-baka.local interface=auto netcfg/dhcp_timeout=60%s
 boot || shell
-`, fullURL, backendURL, node.Hostname, extraArgs)
+`, fullURL, backendURL, preseedQuery, node.Hostname, extraArgs)
 
 		default:
 			// Unsupported OS - drop to shell
@@ -279,38 +436,75 @@ func (h *PXEHandler) Preseed(c *gin.Context) {
 		return
 	}
 
+	// One-time provisioning token gate. Do not consume here — installers
+	// (anaconda, debian-installer) may legitimately re-fetch preseed during
+	// the install. PostInstall is the consumer.
+	token := c.Query("t")
+	if pxeTokenRequired() {
+		// requireIP=false: anaconda often egresses on a different NIC than
+		// the iPXE phase. Status + node-binding + TTL are the load-bearing
+		// checks; IP binding is enforced only at PostInstall.
+		if _, err := ValidatePXEToken(getDB(), token, node.ID, c.ClientIP(), false); err != nil {
+			slog.Warn("Preseed token validation failed",
+				"mac", mac, "nodeID", node.ID, "remote_addr", c.ClientIP(), "error", err)
+			c.String(http.StatusForbidden, "# Invalid or expired provisioning token")
+			return
+		}
+	}
+	postinstallQuery := ""
+	if token != "" {
+		postinstallQuery = "?t=" + token
+	}
+
 	// Construct public backend URL
 	serverIP := getPublicServerIP(c)
 	backendURL := fmt.Sprintf("http://%s", serverIP)
 
-	// Determine Mirror Config (node > env > DB > defaults)
+	// Determine Mirror Config (node > env > DB > defaults). Two distinct
+	// archives on Debian/Ubuntu: the main package archive and a separate
+	// security archive on a different host. The previous code shared the
+	// same host between the two and just appended "-security" to the
+	// path — that produced http://deb.debian.org/debian-security which
+	// 404s, leaving installed nodes without security updates.
 	var config model.DHCPConfig
 	_ = getDB().Where("is_active = ?", true).First(&config)
+
 	baseMirror := resolveMirror(node.OSType, node.MirrorURL, config.MirrorURL)
-	mirrorHost := ""
-	mirrorDir := "/"
-	if u, err := url.Parse(baseMirror); err == nil {
-		mirrorHost = u.Host
-		mirrorDir = u.Path
-		if mirrorDir == "" {
-			mirrorDir = "/"
-		}
-	}
+	mirrorHost, mirrorDir := splitMirrorURL(baseMirror)
+
+	securityMirror := resolveSecurityMirror(node.OSType, node.SecurityMirrorURL, config.SecurityMirrorURL)
+	securityHost, securityDir := splitMirrorURL(securityMirror)
 
 	// Prepare partition configuration
 	var partitionSection string
 
-	passphrase := strings.ReplaceAll(node.EncryptionPassphrase, "\n", "")
-	passphrase = strings.ReplaceAll(passphrase, "\r", "")
-	if passphrase == "" {
-		passphrase = "changeme"
+	// Disk selection: either the operator pinned a path (node.TargetDisk)
+	// or we let the installer auto-detect at runtime via early_command.
+	// Either way the result lands in partman-auto/disk before partman runs.
+	diskSection := buildDiskSelection(node.TargetDisk)
+
+	// Resolve the LUKS passphrase by decrypting the stored field. Refuse to
+	// serve preseed if encryption is enabled but no passphrase is recoverable
+	// — serving garbage would brick the disk and lock the node out
+	// permanently.
+	var passphrase string
+	if node.EncryptionEnabled {
+		p, err := resolveNodePassphrase(&node)
+		if err != nil {
+			slog.Error("Refusing preseed: no recoverable LUKS passphrase",
+				"nodeID", node.ID, "mac", mac, "error", err)
+			c.String(http.StatusInternalServerError, "# No recoverable LUKS passphrase; aborting to avoid bricking the disk")
+			return
+		}
+		passphrase = strings.ReplaceAll(p, "\n", "")
+		passphrase = strings.ReplaceAll(passphrase, "\r", "")
 	}
 
 	if node.EncryptionEnabled {
 		// LUKS encrypted partition with EXT4
 		partitionSection = fmt.Sprintf(`### Partitioning (LUKS encrypted with EXT4)
+%s
 d-i partman-auto/method string crypto
-d-i partman-auto/disk string /dev/sda
 d-i partman-auto-lvm/guided_size string max
 d-i partman-auto-lvm/new_vg_name string vg0
 
@@ -352,12 +546,12 @@ d-i partman-partitioning/confirm_write_new_label boolean true
 d-i partman/choose_partition select finish
 d-i partman/confirm boolean true
 d-i partman/confirm_nooverwrite boolean true
-d-i partman-auto-crypto/erase_disks boolean false`, passphrase, passphrase)
+d-i partman-auto-crypto/erase_disks boolean false`, diskSection, passphrase, passphrase)
 	} else {
 		// Simple EXT4 without encryption
-		partitionSection = `### Partitioning (EXT4 without encryption)
+		partitionSection = fmt.Sprintf(`### Partitioning (EXT4 without encryption)
+%s
 d-i partman-auto/method string regular
-d-i partman-auto/disk string /dev/sda
 d-i partman-lvm/device_remove_lvm boolean true
 d-i partman-md/device_remove_md boolean true
 d-i partman-lvm/confirm boolean true
@@ -385,13 +579,16 @@ d-i partman-auto/expert_recipe string                         \
 d-i partman-partitioning/confirm_write_new_label boolean true
 d-i partman/choose_partition select finish
 d-i partman/confirm boolean true
-d-i partman/confirm_nooverwrite boolean true`
+d-i partman/confirm_nooverwrite boolean true`, diskSection)
 	}
 
-	// Use plain text password for root (Debian installer will hash it)
+	// Use plain text password for root (Debian installer will hash it).
+	// node.RootPassword is AES-GCM ciphertext (enc:base64...) — decrypt before emitting.
 	rootPasswordPlain := "changeme"
 	if node.RootPassword != "" {
-		rootPasswordPlain = node.RootPassword
+		if decrypted := DecryptField(node.RootPassword); decrypted != "" {
+			rootPasswordPlain = decrypted
+		}
 	}
 
 	// Determine timezone (default to UTC if not specified)
@@ -406,22 +603,23 @@ d-i partman/confirm_nooverwrite boolean true`
 		packageSelection = "tasksel tasksel/first multiselect standard, ssh-server"
 	}
 
-	// TPM2 auto-unlock configuration - moved to postinstall script
-	// Just prepare the configuration file in late_command
+	// TPM2 auto-unlock configuration handed off to the postinstall script
+	// via a small config file written in late_command.
+	//
+	// The config content is base64-encoded in Go and written via
+	// `printf %s ... | base64 -d` because the LUKS passphrase is operator-
+	// supplied (or randomly generated from a now-safe charset) and may in
+	// theory contain shell metacharacters that would otherwise be expanded
+	// by the layered single/double-quoted echo. Base64 alphabet is purely
+	// [A-Za-z0-9+/=] — safe for any quoting context the d-i late_command
+	// might be evaluated in.
 	tpmSetupCommand := ""
 	if node.EncryptionEnabled && node.TPMEnabled {
-		// Determine PCR bindings (default to PCR 7 if not specified)
 		pcrBindings := "7"
 		if node.PCRBinding != "" {
 			pcrBindings = node.PCRBinding
 		}
-
-		// Create config file for postinstall script to use
-		tpmSetupCommand = fmt.Sprintf(`in-target sh -c 'echo "LUKS_PASSWORD=%s" > /etc/osbaka-tpm.conf'; \
-    in-target sh -c 'echo "PCR_BINDINGS=%s" >> /etc/osbaka-tpm.conf'; \
-    in-target sh -c 'echo "LUKS_DEVICE=/dev/sda3" >> /etc/osbaka-tpm.conf'; \
-    in-target chmod 600 /etc/osbaka-tpm.conf; \
-    `, passphrase, pcrBindings)
+		tpmSetupCommand = buildTPMPreseedLateCommand(passphrase, pcrBindings)
 	}
 
 	preseed := fmt.Sprintf(`# Preseed configuration for %s
@@ -448,7 +646,7 @@ d-i apt-setup/non-free boolean true
 d-i apt-setup/contrib boolean true
 d-i apt-setup/services-select multiselect security, updates
 d-i apt-setup/security_host string %s
-d-i apt-setup/security_path string %s-security
+d-i apt-setup/security_path string %s
 
 ### Account setup
 d-i passwd/root-login boolean true
@@ -480,25 +678,15 @@ d-i debian-installer/exit/poweroff boolean false
 d-i cdrom-detect/eject boolean false
 
 ### Post-installation commands
-# Late command only does minimal setup, actual configuration happens in postinstall
+# Late command only does minimal setup; actual configuration happens in
+# postinstall (downloaded from backend, run via systemd on first boot).
+# The unit body is written atomically via base64 to avoid the prior
+# echo-chain that silently produced half-written units; critical steps
+# no longer suppress errors (curl, base64 decode, systemctl enable) so
+# install failures surface as preseed errors instead of zombie nodes.
 d-i preseed/late_command string \
-    %sin-target curl -s %s/pxe/postinstall/%s -o /root/postinstall.sh || true; \
-    in-target chmod +x /root/postinstall.sh || true; \
-    in-target sh -c "echo '[Unit]' > /etc/systemd/system/osbaka-postinstall.service" || true; \
-    in-target sh -c "echo 'Description=OS-Baka Post-Installation Script' >> /etc/systemd/system/osbaka-postinstall.service" || true; \
-    in-target sh -c "echo 'After=network-online.target' >> /etc/systemd/system/osbaka-postinstall.service" || true; \
-    in-target sh -c "echo 'Wants=network-online.target' >> /etc/systemd/system/osbaka-postinstall.service" || true; \
-    in-target sh -c "echo '' >> /etc/systemd/system/osbaka-postinstall.service" || true; \
-    in-target sh -c "echo '[Service]' >> /etc/systemd/system/osbaka-postinstall.service" || true; \
-    in-target sh -c "echo 'Type=oneshot' >> /etc/systemd/system/osbaka-postinstall.service" || true; \
-    in-target sh -c "echo 'ExecStart=/root/postinstall.sh' >> /etc/systemd/system/osbaka-postinstall.service" || true; \
-    in-target sh -c "echo 'RemainAfterExit=no' >> /etc/systemd/system/osbaka-postinstall.service" || true; \
-    in-target sh -c "echo '' >> /etc/systemd/system/osbaka-postinstall.service" || true; \
-    in-target sh -c "echo '[Install]' >> /etc/systemd/system/osbaka-postinstall.service" || true; \
-    in-target sh -c "echo 'WantedBy=multi-user.target' >> /etc/systemd/system/osbaka-postinstall.service" || true; \
-    in-target systemctl enable osbaka-postinstall.service || true; \
-    sync
-`, node.Hostname, node.Hostname, node.Hostname, mirrorHost, mirrorDir, mirrorHost, mirrorDir, rootPasswordPlain, rootPasswordPlain, timezone, partitionSection, packageSelection, tpmSetupCommand, backendURL, mac)
+    %s%s
+`, node.Hostname, node.Hostname, node.Hostname, mirrorHost, mirrorDir, securityHost, securityDir, rootPasswordPlain, rootPasswordPlain, timezone, partitionSection, packageSelection, tpmSetupCommand, buildPostinstallLateCommand(backendURL, mac, postinstallQuery))
 
 	c.Header("Content-Type", "text/plain")
 	c.String(http.StatusOK, preseed)
@@ -521,6 +709,27 @@ func (h *PXEHandler) PostInstall(c *gin.Context) {
 		return
 	}
 
+	// Token gate. The installer fetched preseed (no consume) and now fetches
+	// postinstall.sh — this is the single-use endpoint. Bind to client IP:
+	// the request comes from the node itself during late_command on the
+	// install network, so IP should match the boot script's issuer.
+	if pxeTokenRequired() {
+		token := c.Query("t")
+		if _, err := ValidatePXEToken(getDB(), token, node.ID, c.ClientIP(), true); err != nil {
+			slog.Warn("PostInstall token validation failed",
+				"mac", mac, "nodeID", node.ID, "remote_addr", c.ClientIP(), "error", err)
+			c.String(http.StatusForbidden, "# Invalid or expired provisioning token")
+			return
+		}
+		if err := ConsumePXEToken(getDB(), token); err != nil {
+			// Race or replay — refuse rather than serve a script twice.
+			slog.Warn("PostInstall token consume failed",
+				"mac", mac, "nodeID", node.ID, "error", err)
+			c.String(http.StatusForbidden, "# Provisioning token already used")
+			return
+		}
+	}
+
 	// Construct public backend URL
 	serverIP := getPublicServerIP(c)
 	backendURL := fmt.Sprintf("http://%s", serverIP)
@@ -536,69 +745,9 @@ systemctl restart sshd 2>/dev/null || systemctl restart ssh 2>/dev/null || true
 `
 	}
 
-	// TPM2 auto-unlock setup
-	tpmSetup := ""
-	if node.EncryptionEnabled && node.TPMEnabled {
-		tpmSetup = `
-# Configure TPM2 auto-unlock
-echo "OS-Baka: Configuring TPM2 auto-unlock..."
+	tpmSetup := buildTPMPostinstallBlock(&node)
 
-# Load configuration
-if [ -f /etc/osbaka-tpm.conf ]; then
-    source /etc/osbaka-tpm.conf
-    
-    # Install required packages
-    apt-get update 2>/dev/null || true
-    DEBIAN_FRONTEND=noninteractive apt-get install -y tpm2-tools cryptsetup cryptsetup-initramfs 2>/dev/null || true
-    
-    # Bind LUKS to TPM
-    if [ -n "$LUKS_PASSWORD" ] && [ -n "$LUKS_DEVICE" ]; then
-        echo "$LUKS_PASSWORD" | systemd-cryptenroll --tpm2-device=auto --tpm2-pcrs=${PCR_BINDINGS:-7} "$LUKS_DEVICE" 2>/dev/null || true
-        
-        # Update initramfs
-        update-initramfs -u -k all 2>/dev/null || true
-        
-        echo "OS-Baka: TPM2 configuration complete"
-    fi
-    
-    # Clean up sensitive config file
-    rm -f /etc/osbaka-tpm.conf
-else
-    echo "OS-Baka: TPM config file not found, skipping"
-fi
-`
-	}
-
-	script := fmt.Sprintf(`#!/bin/bash
-# Post-installation script for %s
-# Generated by OS-Baka
-
-set +e  # Don't exit on errors
-
-echo "OS-Baka: Running post-installation..."
-
-# Update node status to active (allow failure)
-curl -s -X PUT "%s/api/v1/internal/nodes/%d/status" \
-     -H "Content-Type: application/json" \
-     -d '{"status": "active"}' 2>/dev/null || echo "Warning: Failed to update node status"
-
-# Basic system configuration
-hostnamectl set-hostname %s 2>/dev/null || echo "Warning: Failed to set hostname"
-
-# Enable SSH (try both service names)
-systemctl enable sshd 2>/dev/null || systemctl enable ssh 2>/dev/null || true
-systemctl start sshd 2>/dev/null || systemctl start ssh 2>/dev/null || true
-%s%s
-# Remove this script and service after execution
-rm -f /root/postinstall.sh
-systemctl disable osbaka-postinstall.service 2>/dev/null || true
-rm -f /etc/systemd/system/osbaka-postinstall.service
-
-echo "OS-Baka: Post-installation complete!"
-
-# Always exit successfully
-exit 0
-`, node.Hostname, backendURL, node.ID, node.Hostname, sshRootLoginSetup, tpmSetup)
+	script := buildPostinstallScript(&node, backendURL, sshRootLoginSetup, tpmSetup)
 
 	c.Header("Content-Type", "text/plain")
 	c.String(http.StatusOK, script)

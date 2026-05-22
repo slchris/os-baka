@@ -1,7 +1,6 @@
 package api
 
 import (
-	"log/slog"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
@@ -105,44 +104,56 @@ func (h *DHCPHandler) GetActiveConfig(c *gin.Context) {
 // @Router       /dhcp/configs [post]
 func (h *DHCPHandler) CreateConfig(c *gin.Context) {
 	var req struct {
-		Name         string `json:"name" binding:"required"`
-		Interface    string `json:"interface"`
-		RangeStart   string `json:"range_start" binding:"required"`
-		RangeEnd     string `json:"range_end" binding:"required"`
-		SubnetMask   string `json:"subnet_mask"`
-		Gateway      string `json:"gateway"`
-		DNSServer    string `json:"dns_server"`
-		LeaseTime    string `json:"lease_time"`
-		Domain       string `json:"domain"`
-		TFTPServer   string `json:"tftp_server"`
-		BootFile     string `json:"boot_file"`
-		NextServer   string `json:"next_server"`
-		KernelParams string `json:"kernel_params"`
-		IsActive     bool   `json:"is_active"`
-		EnablePXE    bool   `json:"enable_pxe"`
+		Name              string `json:"name" binding:"required"`
+		Interface         string `json:"interface"`
+		RangeStart        string `json:"range_start" binding:"required"`
+		RangeEnd          string `json:"range_end" binding:"required"`
+		SubnetMask        string `json:"subnet_mask"`
+		Gateway           string `json:"gateway"`
+		DNSServer         string `json:"dns_server"`
+		LeaseTime         string `json:"lease_time"`
+		Domain            string `json:"domain"`
+		TFTPServer        string `json:"tftp_server"`
+		BootFile          string `json:"boot_file"`
+		NextServer        string `json:"next_server"`
+		MirrorURL         string `json:"mirror_url"`
+		SecurityMirrorURL string `json:"security_mirror_url"`
+		KernelParams      string `json:"kernel_params"`
+		IsActive          bool   `json:"is_active"`
+		EnablePXE         bool   `json:"enable_pxe"`
 	}
 
 	if err := c.ShouldBindJSON(&req); err != nil {
 		ErrorResponse(c, http.StatusBadRequest, err.Error())
 		return
 	}
+	if req.MirrorURL != "" && !isValidMirrorURL(req.MirrorURL) {
+		ErrorResponse(c, http.StatusBadRequest, "Invalid mirror_url (must be http(s)://host[/path])")
+		return
+	}
+	if req.SecurityMirrorURL != "" && !isValidMirrorURL(req.SecurityMirrorURL) {
+		ErrorResponse(c, http.StatusBadRequest, "Invalid security_mirror_url (must be http(s)://host[/path])")
+		return
+	}
 
 	config := model.DHCPConfig{
-		Name:         req.Name,
-		Interface:    req.Interface,
-		RangeStart:   req.RangeStart,
-		RangeEnd:     req.RangeEnd,
-		SubnetMask:   req.SubnetMask,
-		Gateway:      req.Gateway,
-		DNSServer:    req.DNSServer,
-		LeaseTime:    req.LeaseTime,
-		Domain:       req.Domain,
-		TFTPServer:   req.TFTPServer,
-		BootFile:     req.BootFile,
-		NextServer:   req.NextServer,
-		KernelParams: req.KernelParams,
-		IsActive:     req.IsActive,
-		EnablePXE:    req.EnablePXE,
+		Name:              req.Name,
+		Interface:         req.Interface,
+		RangeStart:        req.RangeStart,
+		RangeEnd:          req.RangeEnd,
+		SubnetMask:        req.SubnetMask,
+		Gateway:           req.Gateway,
+		DNSServer:         req.DNSServer,
+		LeaseTime:         req.LeaseTime,
+		Domain:            req.Domain,
+		TFTPServer:        req.TFTPServer,
+		BootFile:          req.BootFile,
+		NextServer:        req.NextServer,
+		MirrorURL:         req.MirrorURL,
+		SecurityMirrorURL: req.SecurityMirrorURL,
+		KernelParams:      req.KernelParams,
+		IsActive:          req.IsActive,
+		EnablePXE:         req.EnablePXE,
 	}
 
 	// Set defaults
@@ -170,10 +181,7 @@ func (h *DHCPHandler) CreateConfig(c *gin.Context) {
 		return
 	}
 
-	// Regenerate dnsmasq config
-	if err := GenerateDnsmasqConfig(); err != nil {
-		slog.Warn("Failed to regenerate dnsmasq config", "error", err)
-	}
+	ScheduleDnsmasqRegen()
 
 	c.JSON(http.StatusCreated, config)
 }
@@ -199,25 +207,35 @@ func (h *DHCPHandler) UpdateConfig(c *gin.Context) {
 	}
 
 	var req struct {
-		Name         string `json:"name"`
-		Interface    string `json:"interface"`
-		RangeStart   string `json:"range_start"`
-		RangeEnd     string `json:"range_end"`
-		SubnetMask   string `json:"subnet_mask"`
-		Gateway      string `json:"gateway"`
-		DNSServer    string `json:"dns_server"`
-		LeaseTime    string `json:"lease_time"`
-		Domain       string `json:"domain"`
-		TFTPServer   string `json:"tftp_server"`
-		BootFile     string `json:"boot_file"`
-		NextServer   string `json:"next_server"`
-		KernelParams string `json:"kernel_params"`
-		IsActive     bool   `json:"is_active"`
-		EnablePXE    bool   `json:"enable_pxe"`
+		Name              string `json:"name"`
+		Interface         string `json:"interface"`
+		RangeStart        string `json:"range_start"`
+		RangeEnd          string `json:"range_end"`
+		SubnetMask        string `json:"subnet_mask"`
+		Gateway           string `json:"gateway"`
+		DNSServer         string `json:"dns_server"`
+		LeaseTime         string `json:"lease_time"`
+		Domain            string `json:"domain"`
+		TFTPServer        string `json:"tftp_server"`
+		BootFile          string `json:"boot_file"`
+		NextServer        string `json:"next_server"`
+		MirrorURL         string `json:"mirror_url"`
+		SecurityMirrorURL string `json:"security_mirror_url"`
+		KernelParams      string `json:"kernel_params"`
+		IsActive          bool   `json:"is_active"`
+		EnablePXE         bool   `json:"enable_pxe"`
 	}
 
 	if err := c.ShouldBindJSON(&req); err != nil {
 		ErrorResponse(c, http.StatusBadRequest, err.Error())
+		return
+	}
+	if req.MirrorURL != "" && !isValidMirrorURL(req.MirrorURL) {
+		ErrorResponse(c, http.StatusBadRequest, "Invalid mirror_url (must be http(s)://host[/path])")
+		return
+	}
+	if req.SecurityMirrorURL != "" && !isValidMirrorURL(req.SecurityMirrorURL) {
+		ErrorResponse(c, http.StatusBadRequest, "Invalid security_mirror_url (must be http(s)://host[/path])")
 		return
 	}
 
@@ -238,16 +256,15 @@ func (h *DHCPHandler) UpdateConfig(c *gin.Context) {
 	config.TFTPServer = req.TFTPServer
 	config.BootFile = req.BootFile
 	config.NextServer = req.NextServer
+	config.MirrorURL = req.MirrorURL
+	config.SecurityMirrorURL = req.SecurityMirrorURL
 	config.KernelParams = req.KernelParams
 	config.IsActive = req.IsActive
 	config.EnablePXE = req.EnablePXE
 
 	getDB().Save(&config)
 
-	// Regenerate dnsmasq config
-	if err := GenerateDnsmasqConfig(); err != nil {
-		slog.Warn("Failed to regenerate dnsmasq config", "error", err)
-	}
+	ScheduleDnsmasqRegen()
 
 	c.JSON(http.StatusOK, config)
 }
@@ -351,10 +368,7 @@ func (h *DHCPHandler) CreateReservation(c *gin.Context) {
 		return
 	}
 
-	// Regenerate dnsmasq config
-	if err := GenerateDnsmasqConfig(); err != nil {
-		slog.Warn("Failed to regenerate dnsmasq config", "error", err)
-	}
+	ScheduleDnsmasqRegen()
 
 	c.JSON(http.StatusCreated, reservation)
 }
@@ -400,10 +414,7 @@ func (h *DHCPHandler) UpdateReservation(c *gin.Context) {
 
 	getDB().Save(&reservation)
 
-	// Regenerate dnsmasq config
-	if err := GenerateDnsmasqConfig(); err != nil {
-		slog.Warn("Failed to regenerate dnsmasq config", "error", err)
-	}
+	ScheduleDnsmasqRegen()
 
 	c.JSON(http.StatusOK, reservation)
 }
@@ -424,10 +435,7 @@ func (h *DHCPHandler) DeleteReservation(c *gin.Context) {
 	}
 	getDB().Delete(&model.DHCPReservation{}, id)
 
-	// Regenerate dnsmasq config
-	if err := GenerateDnsmasqConfig(); err != nil {
-		slog.Warn("Failed to regenerate dnsmasq config", "error", err)
-	}
+	ScheduleDnsmasqRegen()
 
 	c.JSON(http.StatusOK, gin.H{"success": true})
 }
@@ -475,10 +483,7 @@ func (h *DHCPHandler) SyncFromNodes(c *gin.Context) {
 		}
 	}
 
-	// Regenerate dnsmasq config
-	if err := GenerateDnsmasqConfig(); err != nil {
-		slog.Warn("Failed to regenerate dnsmasq config", "error", err)
-	}
+	ScheduleDnsmasqRegen()
 
 	c.JSON(http.StatusOK, gin.H{
 		"success": true,

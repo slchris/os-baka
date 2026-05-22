@@ -2,7 +2,8 @@ package api
 
 import (
 	cryptoRand "crypto/rand"
-	"log/slog"
+	"errors"
+	"fmt"
 	"net"
 	"net/http"
 	"regexp"
@@ -12,7 +13,6 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/os-baka/backend/internal/model"
-	"golang.org/x/crypto/bcrypt"
 )
 
 type NodeHandler struct{}
@@ -149,6 +149,7 @@ func (h *NodeHandler) CreateNode(c *gin.Context) {
 		OSType               string `json:"os_type"`
 		OSVersion            string `json:"os_version"`
 		MirrorURL            string `json:"mirror_url"`
+		SecurityMirrorURL    string `json:"security_mirror_url"`
 		Timezone             string `json:"timezone"`
 		RootPassword         string `json:"root_password"`
 		SSHEnabled           bool   `json:"ssh_enabled"`
@@ -158,10 +159,37 @@ func (h *NodeHandler) CreateNode(c *gin.Context) {
 		TPMEnabled           bool   `json:"tpm_enabled"`
 		USBKeyRequired       bool   `json:"usb_key_required"`
 		PCRBinding           string `json:"pcr_binding"`
+		IPMIAddress          string `json:"ipmi_address"`
+		IPMIUsername         string `json:"ipmi_username"`
+		IPMIPassword         string `json:"ipmi_password"`
+		IPMIAllowUntrusted   bool   `json:"ipmi_allow_untrusted"`
+		TargetDisk           string `json:"target_disk"`
 	}
 
 	if err := c.ShouldBindJSON(&req); err != nil {
 		ErrorResponse(c, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	if req.TargetDisk != "" && !isValidDiskPath(req.TargetDisk) {
+		ErrorResponse(c, http.StatusBadRequest, "Invalid target_disk format (must match ^/dev/[a-zA-Z0-9/_.-]+$)")
+		return
+	}
+	if req.MirrorURL != "" && !isValidMirrorURL(req.MirrorURL) {
+		ErrorResponse(c, http.StatusBadRequest, "Invalid mirror_url (must be http(s)://host[/path])")
+		return
+	}
+	if req.SecurityMirrorURL != "" && !isValidMirrorURL(req.SecurityMirrorURL) {
+		ErrorResponse(c, http.StatusBadRequest, "Invalid security_mirror_url (must be http(s)://host[/path])")
+		return
+	}
+
+	// Validate hostname: RFC1123 single-label, 1-63 chars, [a-zA-Z0-9-],
+	// no leading/trailing hyphen, no dot. Flows into preseed, kernel
+	// cmdline, hostnamectl — escape-once-at-edge is simpler than the
+	// per-sink quoting fan-out.
+	if !isValidHostname(req.Hostname) {
+		ErrorResponse(c, http.StatusBadRequest, "Invalid hostname (must be RFC1123 single-label: 1-63 chars, [a-zA-Z0-9-], no leading/trailing hyphen, no dot)")
 		return
 	}
 
@@ -182,18 +210,29 @@ func (h *NodeHandler) CreateNode(c *gin.Context) {
 		ErrorResponse(c, http.StatusBadRequest, "encryption_passphrase is required when encryption_enabled is true")
 		return
 	}
-
-	// Hash root password before storing (preseed uses the hashed form)
-	var hashedRootPassword string
-	if req.RootPassword != "" {
-		hashed, err := bcrypt.GenerateFromPassword([]byte(req.RootPassword), 10)
-		if err != nil {
-			ErrorResponse(c, http.StatusInternalServerError, "Failed to hash root password")
-			return
-		}
-		hashedRootPassword = string(hashed)
+	if err := validatePassphrase(req.EncryptionPassphrase); err != nil {
+		ErrorResponse(c, http.StatusBadRequest, "encryption_passphrase: "+err.Error())
+		return
+	}
+	if err := validatePassphrase(req.RootPassword); err != nil {
+		ErrorResponse(c, http.StatusBadRequest, "root_password: "+err.Error())
+		return
 	}
 
+	// Default initial status. Operator-registered nodes are pending until
+	// they PXE-boot and run through install. An explicit non-empty status
+	// must be one we recognize — otherwise typos like "Pending" silently
+	// create unmanaged nodes.
+	if req.Status == "" {
+		req.Status = NodeStatusPending
+	} else if !IsKnownNodeStatus(req.Status) {
+		ErrorResponse(c, http.StatusBadRequest, "Invalid status value: "+req.Status)
+		return
+	}
+
+	// Root password is stored as AES-GCM ciphertext; the installer hashes the
+	// plaintext via crypt(3) during preseed. Do NOT bcrypt here — that would
+	// produce a hash the installer treats as the plaintext password.
 	node := model.Node{
 		Hostname:             req.Hostname,
 		IPAddress:            req.IPAddress,
@@ -203,8 +242,9 @@ func (h *NodeHandler) CreateNode(c *gin.Context) {
 		OSType:               req.OSType,
 		OSVersion:            req.OSVersion,
 		MirrorURL:            req.MirrorURL,
+		SecurityMirrorURL:    req.SecurityMirrorURL,
 		Timezone:             req.Timezone,
-		RootPassword:         hashedRootPassword,
+		RootPassword:         req.RootPassword,
 		SSHEnabled:           req.SSHEnabled,
 		SSHRootLogin:         req.SSHRootLogin,
 		EncryptionEnabled:    req.EncryptionEnabled,
@@ -212,28 +252,29 @@ func (h *NodeHandler) CreateNode(c *gin.Context) {
 		TPMEnabled:           req.TPMEnabled,
 		USBKeyRequired:       req.USBKeyRequired,
 		PCRBinding:           req.PCRBinding,
+		IPMIAddress:          req.IPMIAddress,
+		IPMIUsername:         req.IPMIUsername,
+		IPMIPassword:         req.IPMIPassword,
+		IPMIAllowUntrusted:   req.IPMIAllowUntrusted,
+		TargetDisk:           req.TargetDisk,
+	}
+
+	// If the initial status is `installing`, stamp the start time so the
+	// install-timeout watcher can catch stuck nodes. `pending` means the
+	// node is registered but has not begun provisioning — no clock yet.
+	if node.Status == NodeStatusInstalling {
+		now := time.Now().UTC()
+		node.InstallingStartedAt = &now
 	}
 
 	// Encrypt sensitive fields before storage
 	node.IPMIPassword = EncryptField(node.IPMIPassword)
 	node.RootPassword = EncryptField(node.RootPassword)
+	node.EncryptionPassphrase = EncryptField(node.EncryptionPassphrase)
 
 	if result := getDB().Create(&node); result.Error != nil {
 		ErrorResponse(c, http.StatusInternalServerError, result.Error.Error())
 		return
-	}
-
-	// Store passphrase in Vault if encryption is enabled
-	if node.EncryptionEnabled && req.EncryptionPassphrase != "" {
-		if store := getSecretStore(); store != nil && store.Type() == "vault" {
-			if err := store.StorePassphrase(c.Request.Context(), node.ID, req.EncryptionPassphrase); err != nil {
-				slog.Error("Failed to store passphrase in Vault, kept in DB as fallback",
-					"nodeID", node.ID, "error", err)
-			} else {
-				// Clear passphrase from DB since it's now in Vault
-				getDB().Model(&node).Update("encryption_passphrase", "vault:managed")
-			}
-		}
 	}
 
 	// Sync to DHCP Reservation
@@ -255,10 +296,7 @@ func (h *NodeHandler) CreateNode(c *gin.Context) {
 		getDB().Save(&reservation)
 	}
 
-	// Regenerate dnsmasq config for DHCP reservations
-	if err := GenerateDnsmasqConfig(); err != nil {
-		slog.Warn("dnsmasq config regeneration failed", "error", err)
-	}
+	ScheduleDnsmasqRegen()
 
 	c.JSON(http.StatusCreated, node)
 }
@@ -282,6 +320,7 @@ func (h *NodeHandler) UpdateNode(c *gin.Context) {
 		OSType               string  `json:"os_type"`
 		OSVersion            string  `json:"os_version"`
 		MirrorURL            string  `json:"mirror_url"`
+		SecurityMirrorURL    string  `json:"security_mirror_url"`
 		Timezone             *string `json:"timezone"`
 		RootPassword         *string `json:"root_password"`
 		SSHEnabled           *bool   `json:"ssh_enabled"`
@@ -291,6 +330,11 @@ func (h *NodeHandler) UpdateNode(c *gin.Context) {
 		TPMEnabled           *bool   `json:"tpm_enabled"`
 		USBKeyRequired       *bool   `json:"usb_key_required"`
 		PCRBinding           *string `json:"pcr_binding"`
+		IPMIAddress          *string `json:"ipmi_address"`
+		IPMIUsername         *string `json:"ipmi_username"`
+		IPMIPassword         *string `json:"ipmi_password"`
+		IPMIAllowUntrusted   *bool   `json:"ipmi_allow_untrusted"`
+		TargetDisk           *string `json:"target_disk"`
 	}
 
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -298,9 +342,44 @@ func (h *NodeHandler) UpdateNode(c *gin.Context) {
 		return
 	}
 
+	// target_disk: nil = leave alone; "" = clear (back to auto-detect);
+	// non-empty = validate. Same three-state pattern as ipmi_password.
+	if req.TargetDisk != nil && *req.TargetDisk != "" && !isValidDiskPath(*req.TargetDisk) {
+		ErrorResponse(c, http.StatusBadRequest, "Invalid target_disk format (must match ^/dev/[a-zA-Z0-9/_.-]+$)")
+		return
+	}
+	if req.MirrorURL != "" && !isValidMirrorURL(req.MirrorURL) {
+		ErrorResponse(c, http.StatusBadRequest, "Invalid mirror_url (must be http(s)://host[/path])")
+		return
+	}
+	if req.SecurityMirrorURL != "" && !isValidMirrorURL(req.SecurityMirrorURL) {
+		ErrorResponse(c, http.StatusBadRequest, "Invalid security_mirror_url (must be http(s)://host[/path])")
+		return
+	}
+	// UpdateNode writes Hostname unconditionally (it's a plain-string
+	// field, not the pointer pattern used for partial fields). That
+	// means an omitted hostname becomes empty and breaks the node.
+	// Reject empty here too — same rule as CreateNode.
+	if !isValidHostname(req.Hostname) {
+		ErrorResponse(c, http.StatusBadRequest, "Invalid hostname (must be RFC1123 single-label: 1-63 chars, [a-zA-Z0-9-], no leading/trailing hyphen, no dot)")
+		return
+	}
+
 	if req.EncryptionEnabled && req.EncryptionPassphrase != nil && strings.TrimSpace(*req.EncryptionPassphrase) == "" {
 		ErrorResponse(c, http.StatusBadRequest, "encryption_passphrase cannot be empty when provided")
 		return
+	}
+	if req.EncryptionPassphrase != nil {
+		if err := validatePassphrase(*req.EncryptionPassphrase); err != nil {
+			ErrorResponse(c, http.StatusBadRequest, "encryption_passphrase: "+err.Error())
+			return
+		}
+	}
+	if req.RootPassword != nil {
+		if err := validatePassphrase(*req.RootPassword); err != nil {
+			ErrorResponse(c, http.StatusBadRequest, "root_password: "+err.Error())
+			return
+		}
 	}
 
 	node.Hostname = req.Hostname
@@ -310,16 +389,13 @@ func (h *NodeHandler) UpdateNode(c *gin.Context) {
 	node.OSType = req.OSType
 	node.OSVersion = req.OSVersion
 	node.MirrorURL = req.MirrorURL
+	node.SecurityMirrorURL = req.SecurityMirrorURL
 	if req.Timezone != nil {
 		node.Timezone = *req.Timezone
 	}
 	if req.RootPassword != nil && *req.RootPassword != "" {
-		hashed, err := bcrypt.GenerateFromPassword([]byte(*req.RootPassword), 10)
-		if err != nil {
-			ErrorResponse(c, http.StatusInternalServerError, "Failed to hash root password")
-			return
-		}
-		node.RootPassword = string(hashed)
+		// Store AES-GCM encrypted plaintext; installer hashes it during preseed.
+		node.RootPassword = EncryptField(*req.RootPassword)
 	}
 	if req.SSHEnabled != nil {
 		node.SSHEnabled = *req.SSHEnabled
@@ -329,7 +405,8 @@ func (h *NodeHandler) UpdateNode(c *gin.Context) {
 	}
 	node.EncryptionEnabled = req.EncryptionEnabled
 	if req.EncryptionPassphrase != nil {
-		node.EncryptionPassphrase = *req.EncryptionPassphrase
+		// Store AES-GCM encrypted; preseed decrypts at provisioning time.
+		node.EncryptionPassphrase = EncryptField(*req.EncryptionPassphrase)
 	}
 	if req.TPMEnabled != nil {
 		node.TPMEnabled = *req.TPMEnabled
@@ -339,6 +416,32 @@ func (h *NodeHandler) UpdateNode(c *gin.Context) {
 	}
 	if req.PCRBinding != nil {
 		node.PCRBinding = *req.PCRBinding
+	}
+	if req.IPMIAddress != nil {
+		node.IPMIAddress = *req.IPMIAddress
+	}
+	if req.IPMIUsername != nil {
+		node.IPMIUsername = *req.IPMIUsername
+	}
+	// IPMIPassword semantics: nil = leave untouched, empty string = caller
+	// explicitly cleared it (e.g. removing BMC creds), non-empty = new value.
+	// We must NOT silently clobber stored ciphertext when the field is absent
+	// from the request (Update is partial), and we must NOT re-encrypt
+	// existing ciphertext.
+	if req.IPMIPassword != nil {
+		if *req.IPMIPassword == "" {
+			node.IPMIPassword = ""
+		} else {
+			node.IPMIPassword = EncryptField(*req.IPMIPassword)
+		}
+	}
+	if req.IPMIAllowUntrusted != nil {
+		node.IPMIAllowUntrusted = *req.IPMIAllowUntrusted
+	}
+	// TargetDisk: nil = leave alone; empty = clear (auto-detect);
+	// non-empty = set (validated above).
+	if req.TargetDisk != nil {
+		node.TargetDisk = *req.TargetDisk
 	}
 
 	getDB().Save(&node)
@@ -362,10 +465,7 @@ func (h *NodeHandler) UpdateNode(c *gin.Context) {
 		getDB().Create(&reservation)
 	}
 
-	// Regenerate dnsmasq config for DHCP reservations
-	if err := GenerateDnsmasqConfig(); err != nil {
-		slog.Warn("dnsmasq config regeneration failed", "error", err)
-	}
+	ScheduleDnsmasqRegen()
 
 	c.JSON(http.StatusOK, node)
 }
@@ -375,18 +475,26 @@ func (h *NodeHandler) DeleteNode(c *gin.Context) {
 	if !ok {
 		return
 	}
+	// Capture the snapshot BEFORE deleting — the auto-audit middleware only
+	// sees the request path and HTTP status, not what was actually destroyed.
+	// After the row is gone there is no recovery path.
 	var node model.Node
-	if result := getDB().First(&node, id); result.Error == nil {
+	found := getDB().First(&node, id).Error == nil
+	if found {
 		// Delete associated DHCP reservation
 		getDB().Where("mac_address = ?", node.MACAddress).Delete(&model.DHCPReservation{})
 	}
 
-	getDB().Delete(&model.Node{}, id)
-
-	// Regenerate dnsmasq config for DHCP reservations
-	if err := GenerateDnsmasqConfig(); err != nil {
-		slog.Warn("dnsmasq config regeneration failed", "error", err)
+	if err := getDB().Delete(&model.Node{}, id).Error; err != nil {
+		ErrorResponse(c, http.StatusInternalServerError, "Failed to delete node")
+		return
 	}
+
+	if found {
+		WriteAuditLog(c, "node.delete", "node", strconv.Itoa(id), makeNodeDeleteSnapshot(&node))
+	}
+
+	ScheduleDnsmasqRegen()
 
 	c.JSON(http.StatusOK, gin.H{"success": true})
 }
@@ -409,23 +517,13 @@ func (h *NodeHandler) GetPassphrase(c *gin.Context) {
 		return
 	}
 
-	// Try Vault first
-	if store := getSecretStore(); store != nil && store.Type() == "vault" {
-		passphrase, err := store.GetPassphrase(c.Request.Context(), node.ID)
-		if err == nil {
-			c.JSON(http.StatusOK, gin.H{"passphrase": passphrase, "source": "vault"})
-			return
-		}
-		slog.Warn("Failed to get passphrase from Vault, trying DB", "nodeID", node.ID, "error", err)
-	}
-
-	// Fallback to DB
-	if node.EncryptionPassphrase == "" || node.EncryptionPassphrase == "vault:managed" {
+	if node.EncryptionPassphrase == "" {
 		ErrorResponse(c, http.StatusNotFound, "No passphrase stored for this node")
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{"passphrase": node.EncryptionPassphrase, "source": "database"})
+	plaintext := DecryptField(node.EncryptionPassphrase)
+	c.JSON(http.StatusOK, gin.H{"passphrase": plaintext})
 }
 
 // UpdateNodeStatus updates only the status field of a node.
@@ -461,23 +559,14 @@ func (h *NodeHandler) UpdateNodeStatus(c *gin.Context) {
 		return
 	}
 
-	// Validate status
-	validStatuses := map[string]bool{
-		"pending":     true,
-		"installing":  true,
-		"active":      true,
-		"maintenance": true,
-		"error":       true,
-	}
-
-	if !validStatuses[req.Status] {
-		ErrorResponse(c, http.StatusBadRequest, "Invalid status value")
+	if err := SetNodeStatus(c, getDB(), &node, req.Status, "internal API callback"); err != nil {
+		if errors.Is(err, ErrIllegalTransition) {
+			ErrorResponse(c, http.StatusBadRequest, err.Error())
+			return
+		}
+		ErrorResponse(c, http.StatusInternalServerError, err.Error())
 		return
 	}
-
-	slog.Debug("UpdateNodeStatus", "id", node.ID, "hostname", node.Hostname, "from", node.Status, "to", req.Status)
-	node.Status = req.Status
-	getDB().Save(&node)
 
 	c.JSON(http.StatusOK, gin.H{
 		"success": true,
@@ -509,14 +598,29 @@ func (h *NodeHandler) RebuildNode(c *gin.Context) {
 		return
 	}
 
-	// Set status to installing to trigger reinstallation
-	node.Status = "installing"
-	getDB().Save(&node)
+	if err := SetNodeStatus(c, getDB(), &node, NodeStatusInstalling, "operator rebuild"); err != nil {
+		if errors.Is(err, ErrIllegalTransition) {
+			ErrorResponse(c, http.StatusConflict, err.Error())
+			return
+		}
+		ErrorResponse(c, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	// Auto power-cycle: send the BMC a `power cycle` so the node actually
+	// PXE-boots into the reinstall instead of waiting for someone to walk
+	// to the rack. Async — the HTTP response returns "scheduled" and the
+	// real outcome lands in the audit log.
+	powerCycleOutcome := "skipped:opted_out"
+	if c.Query("no_power_cycle") != "1" {
+		powerCycleOutcome = TriggerPowerCycle(&node)
+	}
 
 	c.JSON(http.StatusOK, gin.H{
-		"success": true,
-		"message": "Node rebuild initiated. System will reinstall on next boot.",
-		"status":  node.Status,
+		"success":     true,
+		"message":     "Node rebuild initiated. System will reinstall on next boot.",
+		"status":      node.Status,
+		"power_cycle": powerCycleOutcome,
 	})
 }
 
@@ -556,37 +660,99 @@ func (h *NodeHandler) RotatePassphrase(c *gin.Context) {
 		return
 	}
 
-	// Store in Vault or DB
-	source := "database"
-	if store := getSecretStore(); store != nil {
-		if storeErr := store.StorePassphrase(c.Request.Context(), node.ID, newPassphrase); storeErr != nil {
-			slog.Error("Failed to store rotated passphrase", "nodeID", node.ID, "error", storeErr)
-			// Fall through to DB storage
-		} else if store.Type() == "vault" {
-			source = "vault"
-			// Mark DB copy as vault-managed
-			getDB().Model(&node).Update("encryption_passphrase", "vault:managed")
-		}
+	// Persist AES-GCM encrypted; preseed decrypts at provisioning time.
+	if err := getDB().Model(&node).Update("encryption_passphrase", EncryptField(newPassphrase)).Error; err != nil {
+		ErrorResponse(c, http.StatusInternalServerError, "Failed to persist new passphrase")
+		return
 	}
 
-	// If source is still database, store directly
-	if source == "database" {
-		getDB().Model(&node).Update("encryption_passphrase", newPassphrase)
-	}
-
-	// Audit log
-	WriteAuditLog(c, "node.rotate_passphrase", "node", strconv.Itoa(id), "Passphrase rotated, stored in "+source)
+	WriteAuditLog(c, "node.rotate_passphrase", "node", strconv.Itoa(id), "Passphrase rotated")
 
 	c.JSON(http.StatusOK, gin.H{
 		"passphrase": newPassphrase,
-		"source":     source,
 		"message":    "Passphrase rotated successfully",
 	})
 }
 
-// generateSecurePassphrase creates a cryptographically secure random passphrase.
+// hostnamePattern enforces an RFC1123 single-label hostname:
+//   - 1 to 63 characters
+//   - letters, digits, hyphen only
+//   - cannot start or end with a hyphen
+//
+// Dots are deliberately NOT allowed. OS-Baka treats Node.Hostname as the
+// short host name; the domain part comes from preseed (currently fixed
+// at os-baka.local). Allowing dots would let an operator type
+// "node.bad.example" which then gets jammed verbatim into
+// `d-i netcfg/hostname string ...`, producing a fqdn-shaped value where
+// Debian wants the short name. Reject upfront — less surprising.
+//
+// We reject upfront rather than escape downstream because hostname flows
+// to many sinks (iPXE imgargs, preseed debconf lines, postinstall
+// `hostnamectl set-hostname`, comments, eventually systemd / DNS / SSH
+// on the installed OS). Each sink has different escape requirements;
+// the union of "safe in all of them" is RFC1123 anyway.
+var hostnamePattern = regexp.MustCompile(`^[a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?$`)
+
+// isValidHostname reports whether s is an acceptable Node hostname.
+func isValidHostname(s string) bool {
+	return hostnamePattern.MatchString(s)
+}
+
+// validatePassphrase rejects passphrases that can't safely round-trip
+// through the preseed pipeline. Specifically:
+//
+//   - NUL byte: debconf truncates the value, so the stored "passphrase"
+//     becomes a prefix of what the operator typed → LUKS unlock fails.
+//   - Newline / CR: would break preseed line structure (it's one line per
+//     directive).
+//
+// Other shell metacharacters (`$`, `'`, `"`, backtick) are NOT rejected
+// here — the TPM config write now base64-encodes the value (see
+// pxe.go), and the preseed `partman-crypto/passphrase password ...`
+// directive consumes the value via debconf, not shell. The remaining
+// risk is purely the two control characters above.
+//
+// Empty string is allowed (caller's responsibility to reject when
+// encryption_enabled = true).
+func validatePassphrase(pw string) error {
+	for i := 0; i < len(pw); i++ {
+		switch pw[i] {
+		case 0:
+			return fmt.Errorf("contains NUL byte at offset %d", i)
+		case '\n', '\r':
+			return fmt.Errorf("contains newline at offset %d", i)
+		}
+	}
+	return nil
+}
+
+// generateSecurePassphrase creates a cryptographically secure random
+// passphrase. Charset is intentionally restricted to URL-safe base64
+// alphabet (A-Za-z0-9_-): 64 chars exactly. Two reasons:
+//
+//   1. Shell safety. The passphrase travels through preseed `late_command`
+//      and a TPM-config write that uses `echo "..." > /etc/osbaka-tpm.conf`
+//      inside the installed system. Inside double quotes, `$`, backtick,
+//      and backslash trigger expansion; `!` triggers bash history; quotes
+//      break tokenization. The earlier charset included `!@#$%^&*()` —
+//      meaning real-world LUKS keys could differ from what got written to
+//      the TPM config (e.g. `pass$word` -> `password`), bricking the disk
+//      on first reboot.
+//
+//   2. No modulo bias. 256 / 64 = 4 exactly, so `byte % 64` is uniform.
+//      The old 75-char set introduced a slight skew toward early chars.
+//
+// A 32-char string from this set holds 32*6 = 192 bits of entropy — far
+// above any LUKS brute-force threat model. Longer doesn't help; shorter
+// would be fine too.
 func generateSecurePassphrase(length int) (string, error) {
-	const charset = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!@#$%^&*()-_=+"
+	const charset = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_-"
+	if len(charset) != 64 {
+		// Defensive — if someone edits the charset and breaks the
+		// even-divides-256 property, fail loud rather than silently
+		// regress to modulo bias.
+		return "", fmt.Errorf("charset length must be a power-of-two divisor of 256, got %d", len(charset))
+	}
 	result := make([]byte, length)
 	randomBytes := make([]byte, length)
 	if _, err := cryptoRandRead(randomBytes); err != nil {

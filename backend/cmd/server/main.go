@@ -12,7 +12,6 @@ import (
 	"github.com/os-baka/backend/internal/api"
 	"github.com/os-baka/backend/internal/config"
 	"github.com/os-baka/backend/internal/model"
-	"github.com/os-baka/backend/internal/vault"
 
 	"github.com/gin-contrib/cors"
 	"github.com/gin-gonic/gin"
@@ -44,23 +43,16 @@ func main() {
 	// Init DB
 	model.InitDB(cfg)
 
-	// Init secret store (Vault or DB fallback)
-	vaultCfg := &vault.Config{
-		Enabled:    cfg.Vault.Enabled,
-		Address:    cfg.Vault.Address,
-		Token:      cfg.Vault.Token,
-		MountPath:  cfg.Vault.MountPath,
-		PathPrefix: cfg.Vault.PathPrefix,
-	}
-	secretStore := vault.NewFromConfig(vaultCfg)
+	// Inject DB into API handlers
+	api.InitHandlers(model.DB)
 
-	// Inject DB and secret store into API handlers
-	api.InitHandlers(model.DB, secretStore)
-
-	// Regenerate dnsmasq config to ensure consistency on startup
+	// Regenerate dnsmasq config synchronously on startup to ensure the
+	// on-disk state matches the DB before we start serving PXE requests.
+	// After this, all mutations go through the scheduler.
 	if err := api.GenerateDnsmasqConfig(); err != nil {
 		slog.Warn("Startup dnsmasq config generation failed", "error", err)
 	}
+	api.StartDnsmasqScheduler()
 
 	r := gin.Default()
 
@@ -92,7 +84,7 @@ func main() {
 	r.Use(api.RequestLoggerMiddleware())
 
 	// ── Routes ──
-	api.RegisterRoutes(r, cfg, secretStore.Type())
+	api.RegisterRoutes(r, cfg)
 
 	// Start background stale node checker (every 5 min, threshold 10 min)
 	api.StartStaleNodeChecker(5, 10)
@@ -128,6 +120,14 @@ func main() {
 		slog.Error("Server forced to shutdown", "error", err)
 		os.Exit(1)
 	}
+
+	// Drain the dnsmasq scheduler so any in-flight regen completes before
+	// process exit. Time-bound to avoid hanging shutdown if regen wedges.
+	stopCtx, stopCancel := context.WithTimeout(context.Background(), 5*time.Second)
+	if err := api.StopDnsmasqScheduler(stopCtx); err != nil {
+		slog.Warn("dnsmasq scheduler stop timed out", "error", err)
+	}
+	stopCancel()
 
 	slog.Info("Server exited gracefully")
 }
