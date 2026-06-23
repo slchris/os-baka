@@ -10,7 +10,7 @@ Documentation in the repo (README.md and inline) is primarily in **Chinese**. Ne
 
 ## Commands
 
-### Backend (Go 1.24)
+### Backend (Go 1.25)
 
 ```bash
 cd backend
@@ -18,7 +18,7 @@ go mod download
 go run ./cmd/server                       # run server (loads ./config.yaml or ../config.yaml)
 go test -v ./...                          # run all tests
 go test -v ./internal/api -run TestName   # run a single test
-golangci-lint run --timeout=5m            # lint (CI pins v1.64.8)
+golangci-lint run --timeout=5m            # lint (CI pins v2.6.2; needs Go 1.25)
 swag init -g cmd/server/main.go           # regenerate backend/docs/ Swagger after annotation changes
 ```
 
@@ -230,7 +230,7 @@ When `/etc/dnsmasq.d/` does not exist (dev mode, no bind mount), `GenerateDnsmas
 
 ## CI
 
-`.github/workflows/ci.yml` runs on push/PR to `main` and weekly cron. Job order: `security` (golangci-lint v1.64.8, gosec, govulncheck, Trivy) → `backend` (build + test) and `frontend` (build + `npm test -- --run`) in parallel → `docker` (builds all three images, no push). The security job is a gate — keep lint clean and don't introduce new vulns flagged by govulncheck/gosec.
+`.github/workflows/ci.yml` runs on push/PR to `main` and weekly cron. Job order: `security` (golangci-lint v2.6.2, gosec, govulncheck, Trivy) → `backend` (build + test) and `frontend` (build + `npm test -- --run`) in parallel → `docker` (builds all three images; on push to `main` also pushes them to `ghcr.io/<owner>/os-baka-{backend,frontend,pxe-services}` tagged `latest` + commit SHA — PRs build only, no push). The security job is a gate — keep lint clean and don't introduce new vulns flagged by govulncheck/gosec.
 
 ## Notes for changes
 

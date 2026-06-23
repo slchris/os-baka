@@ -308,12 +308,35 @@ npm run dev
 
 ---
 
-## 默认登录
+## 管理员账号
 
-- **用户名**: `admin`
-- **密码**: `admin`
+系统在 **首次启动**（数据库中尚不存在 `admin` 用户）时会自动创建一个管理员账号：
 
-> **注意**：生产环境请务必通过 `ADMIN_PASSWORD` 环境变量设置管理员密码。
+- **用户名**：固定为 `admin`（不可通过环境变量更改）
+- **密码**：取自环境变量 `ADMIN_PASSWORD`；未设置时回退为默认值 `admin`，并在日志中打印告警。
+
+### 设置初始密码
+
+在 **首次启动前** 通过环境变量设置，例如：
+
+```bash
+# docker/.env（Docker Compose 部署）
+ADMIN_PASSWORD=your_strong_password_here
+
+# 或直接以环境变量运行后端
+ADMIN_PASSWORD=your_strong_password_here go run ./cmd/server
+```
+
+> ⚠️ **`ADMIN_PASSWORD` 仅在首次播种时生效**。一旦 `admin` 用户已存在，再修改该变量不会改动既有账号——它只决定"第一次"创建时的密码。
+
+### 修改已有账号的密码
+
+数据库已经初始化、需要改密时，请使用应用内功能而非环境变量：
+
+- 登录后在 **Settings / 用户管理** 页面修改密码；或
+- 调用用户管理 API（见下方 API 一览中的用户/认证相关接口）。
+
+> 🔒 **生产环境务必显式设置 `ADMIN_PASSWORD`**（或首次登录后立即改密），不要使用默认的 `admin/admin`。同时建议设置足够强度的 `SECRET_KEY`（release 模式下少于 32 字符或保留默认值将拒绝启动）。
 
 ---
 
@@ -465,7 +488,7 @@ os-baka/
 | `PORT` | 后端监听端口 | `8000` |
 | `SECRET_KEY` | JWT 签名密钥(release 模式下 < 32 字符或保留默认值会启动失败) | `change-this-in-production` |
 | `GIN_MODE` | Gin 运行模式 | `debug` |
-| `ADMIN_PASSWORD` | 管理员初始密码 | `admin` |
+| `ADMIN_PASSWORD` | 管理员初始密码（仅首次启动、数据库中尚无 `admin` 用户时生效，见「管理员账号」） | `admin` |
 | `EXTERNAL_IP` | PXE 服务对外 IP | 自动检测 |
 | `VITE_API_URL` | 前端 API 地址 | `http://localhost:8000/api/v1` |
 | `VITE_GEMINI_API_KEY` | Gemini AI API Key (可选) | - |

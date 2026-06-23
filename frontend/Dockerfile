@@ -1,5 +1,5 @@
 # Build Stage
-FROM hub.infra.plz.ac/library/node:20-alpine AS builder
+FROM node:20-alpine AS builder
 
 WORKDIR /app
 
@@ -14,7 +14,7 @@ ENV VITE_API_URL=$VITE_API_URL
 RUN npm run build
 
 # Run Stage
-FROM hub.infra.plz.ac/library/nginx:alpine
+FROM nginx:alpine
 
 # Remove default nginx static assets
 RUN rm -rf /usr/share/nginx/html/*

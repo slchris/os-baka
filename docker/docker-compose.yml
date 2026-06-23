@@ -3,7 +3,7 @@ version: '3.8'
 services:
   # PostgreSQL Database
   db:
-    image: hub.infra.plz.ac/library/postgres:15-alpine
+    image: postgres:15-alpine
     container_name: osbaka-db
     env_file:
       - .env
@@ -47,7 +47,7 @@ services:
 
   # Frontend (React - New UI)
   frontend:
-    image: hub.infra.plz.ac/library/node:20-alpine
+    image: node:20-alpine
     container_name: osbaka-frontend
     working_dir: /app
     environment:

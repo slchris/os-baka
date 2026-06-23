@@ -1,5 +1,5 @@
 # Build Stage
-FROM hub.infra.plz.ac/library/golang:1.24-alpine AS builder
+FROM golang:1.25-alpine AS builder
 
 WORKDIR /app
 
@@ -11,7 +11,7 @@ COPY . .
 RUN go build -o main ./cmd/server
 
 # Run Stage
-FROM hub.infra.plz.ac/library/alpine:latest
+FROM alpine:latest
 
 # ipmitool is required for BMC power management (manual /nodes/:id/power
 # action and the auto power-cycle that follows a rebuild). Without it both

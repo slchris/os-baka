@@ -1,4 +1,4 @@
-FROM hub.infra.plz.ac/library/alpine:latest
+FROM alpine:latest
 
 RUN apk add --no-cache dnsmasq tftp-hpa curl
 
