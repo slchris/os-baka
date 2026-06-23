@@ -2,7 +2,8 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { BackendService } from '../services/backendService';
-import { ShieldCheck, ArrowRight, Loader2 } from 'lucide-react';
+import { ArrowRight, Loader2 } from 'lucide-react';
+import { RackLockMark } from '../components/RackLockMark';
 
 export const Login: React.FC = () => {
   const navigate = useNavigate();
@@ -20,7 +21,7 @@ export const Login: React.FC = () => {
       await BackendService.login(username, password);
       navigate('/dashboard');
     } catch (err) {
-      setError('用户名或密码错误，请重试。默认凭据：admin / admin123');
+      setError('用户名或密码错误，请重试。');
     } finally {
       setIsLoading(false);
     }
@@ -32,7 +33,7 @@ export const Login: React.FC = () => {
         <div className="p-8 md:p-12">
           <div className="flex justify-center mb-8">
             <div className="w-12 h-12 bg-black dark:bg-white rounded-xl flex items-center justify-center text-white dark:text-black">
-              <ShieldCheck className="w-7 h-7" />
+              <RackLockMark className="w-7 h-7" />
             </div>
           </div>
           
@@ -79,12 +80,6 @@ export const Login: React.FC = () => {
               {!isLoading && <ArrowRight className="w-4 h-4" />}
             </button>
           </form>
-          
-          <div className="mt-4 p-3 bg-blue-50 dark:bg-blue-900/20 rounded-lg border border-blue-100 dark:border-blue-800">
-            <p className="text-xs text-blue-600 dark:text-blue-400 text-center">
-              💡 默认凭据：<span className="font-mono font-semibold">admin</span> / <span className="font-mono font-semibold">admin123</span>
-            </p>
-          </div>
         </div>
         <div className="bg-gray-50 dark:bg-gray-900 p-4 text-center">
           <p className="text-xs text-gray-400 dark:text-gray-500">Protected by OS-Baka Integrity Shield</p>

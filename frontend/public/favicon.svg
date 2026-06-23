@@ -1,0 +1,6 @@
+<svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="OS-Baka">
+  <rect width="100" height="100" rx="22" fill="#0c0d10"/>
+  <g transform="translate(12 12) scale(0.76)">
+    <path fill="#f2f3f5" fill-rule="evenodd" d="M22 16 L78 16 A6 6 0 0 1 84 22 L84 78 A6 6 0 0 1 78 84 L22 84 A6 6 0 0 1 16 78 L16 22 A6 6 0 0 1 22 16 Z M30 27 A4 4 0 0 0 30 35 L70 35 A4 4 0 0 0 70 27 Z M50 44 A12 12 0 0 0 43.6 66.2 L40.9 75.1 A3.2 3.2 0 0 0 44 79.5 L56 79.5 A3.2 3.2 0 0 0 59.1 75.1 L56.4 66.2 A12 12 0 0 0 50 44 Z M50 50.2 A6 6 0 1 1 49.99 50.2 Z"/>
+  </g>
+</svg>

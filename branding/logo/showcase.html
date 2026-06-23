@@ -1,0 +1,337 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>OS-Baka · Rack Lock — Logo 终稿</title>
+<link rel="icon" type="image/svg+xml" href="svg/osbaka-favicon.svg">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@200;300;400;500;600&family=JetBrains+Mono:wght@300;400;500&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg:#0c0d10; --bg2:#15171c; --fg:#f2f3f5; --muted:#8b9099;
+    --line:rgba(255,255,255,.09); --accent:#f2f3f5;
+  }
+  *{margin:0;padding:0;box-sizing:border-box}
+  html{scroll-behavior:smooth}
+  body{
+    font-family:'Inter',-apple-system,BlinkMacSystemFont,sans-serif;
+    -webkit-font-smoothing:antialiased;background:var(--bg);color:var(--fg);
+    overflow-x:hidden;line-height:1.5;
+  }
+  .mono{font-family:'JetBrains Mono',ui-monospace,monospace}
+  .wrap{max-width:1180px;margin:0 auto;padding:0 28px}
+  .logo-color{color:var(--fg)}
+  svg.mark{display:block;overflow:visible}
+
+  /* ---- toolbar ---- */
+  .toolbar{
+    position:sticky;top:0;z-index:50;display:flex;align-items:center;justify-content:space-between;
+    gap:16px;padding:14px 28px;background:rgba(12,13,16,.72);backdrop-filter:blur(14px);
+    border-bottom:1px solid var(--line);
+  }
+  .toolbar .brand{display:flex;align-items:center;gap:12px}
+  .toolbar .brand .g{width:28px;height:28px}
+  .toolbar .brand b{font-weight:500;letter-spacing:.04em;font-size:15px}
+  .toolbar .brand span{color:var(--muted);font-size:12px}
+  .controls{display:flex;gap:10px}
+  .controls button{
+    font-family:'JetBrains Mono',monospace;font-size:11px;letter-spacing:.08em;text-transform:uppercase;
+    color:var(--muted);background:transparent;border:1px solid var(--line);border-radius:999px;
+    padding:7px 14px;cursor:pointer;transition:.25s;
+  }
+  .controls button:hover{color:var(--fg);border-color:rgba(255,255,255,.25)}
+  .controls button.active{color:var(--bg);background:var(--fg);border-color:var(--fg)}
+
+  /* ---- hero ---- */
+  .hero{padding:92px 0 56px;display:flex;flex-direction:column;align-items:center;text-align:center}
+  .hero .stage{
+    width:220px;height:220px;border-radius:30px;display:flex;align-items:center;justify-content:center;
+    background:radial-gradient(130% 130% at 50% 0%,rgba(255,255,255,.07),transparent 60%);
+    border:1px solid var(--line);margin-bottom:34px;
+  }
+  .hero .stage svg{width:128px;height:128px}
+  .hero h1{font-weight:200;font-size:clamp(40px,7vw,72px);letter-spacing:.06em}
+  .hero h1 b{font-weight:500}
+  .hero .tag{margin-top:16px;color:var(--muted);font-size:12px;letter-spacing:.3em;text-transform:uppercase}
+  .hero .lead{margin-top:22px;max-width:560px;color:#c7cbd1;font-weight:300;font-size:15px}
+
+  /* ---- section ---- */
+  section{padding:54px 0;border-top:1px solid var(--line)}
+  .sec-h{display:flex;align-items:baseline;gap:14px;margin-bottom:30px}
+  .sec-h .n{font-family:'JetBrains Mono',monospace;font-size:12px;color:var(--muted)}
+  .sec-h h2{font-weight:400;font-size:22px;letter-spacing:.02em}
+  .sec-h .d{margin-left:auto;color:var(--muted);font-size:12.5px;max-width:340px;text-align:right;font-weight:300}
+
+  /* scale matrix */
+  .scale-row{display:flex;align-items:flex-end;gap:38px;flex-wrap:wrap}
+  .scale-item{display:flex;flex-direction:column;align-items:center;gap:12px}
+  .scale-item .frame{
+    display:flex;align-items:center;justify-content:center;
+    border:1px solid var(--line);border-radius:10px;background:var(--bg2);
+  }
+  .scale-item .frame svg{display:block}
+  .scale-item .lbl{font-family:'JetBrains Mono',monospace;font-size:10px;color:var(--muted)}
+
+  /* surfaces */
+  .surfaces{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:18px}
+  .surf{border-radius:16px;border:1px solid var(--line);height:200px;display:flex;align-items:center;justify-content:center;position:relative;overflow:hidden}
+  .surf .cap{position:absolute;bottom:12px;left:14px;font-family:'JetBrains Mono',monospace;font-size:10px;letter-spacing:.1em;opacity:.6}
+  .surf svg{width:84px;height:84px}
+  .surf.dark{background:#0c0d10;color:#f2f3f5}
+  .surf.light{background:#f6f7f8;color:#14161a}
+  .surf.gray{background:#23262d;color:#f2f3f5}
+  .surf.invert-on-brand{background:#3b5bff;color:#fff}
+  .surf .cap.onlight{color:#14161a}
+
+  /* app mockups */
+  .mocks{display:grid;grid-template-columns:1fr 1fr;gap:20px}
+  @media(max-width:760px){.mocks{grid-template-columns:1fr}}
+  .mock{border:1px solid var(--line);border-radius:16px;overflow:hidden;background:var(--bg2)}
+  .mock .title{padding:10px 14px;font-family:'JetBrains Mono',monospace;font-size:10.5px;color:var(--muted);border-bottom:1px solid var(--line);letter-spacing:.08em}
+  .mock .body{padding:22px}
+
+  /* mock: sidebar */
+  .sb{display:flex;gap:16px;height:230px}
+  .sb .rail{width:188px;background:#0c0d10;border-radius:12px;padding:16px;display:flex;flex-direction:column;gap:6px;border:1px solid var(--line)}
+  .sb .rail .hd{display:flex;align-items:center;gap:10px;padding-bottom:14px;margin-bottom:8px;border-bottom:1px solid var(--line)}
+  .sb .rail .hd svg{width:26px;height:26px;color:#f2f3f5}
+  .sb .rail .hd .t{font-weight:600;font-size:14px;letter-spacing:.03em}
+  .sb .rail .nav{display:flex;align-items:center;gap:10px;padding:8px 10px;border-radius:8px;font-size:12.5px;color:var(--muted)}
+  .sb .rail .nav.on{background:rgba(255,255,255,.06);color:var(--fg)}
+  .sb .rail .nav .dot{width:6px;height:6px;border-radius:50%;background:currentColor;opacity:.5}
+  .sb .canvas{flex:1;background:#0c0d10;border-radius:12px;border:1px solid var(--line)}
+
+  /* mock: login */
+  .login{height:230px;display:flex;align-items:center;justify-content:center;background:radial-gradient(120% 90% at 50% 0%,rgba(59,91,255,.10),transparent 60%);border-radius:12px;border:1px solid var(--line)}
+  .login .card{width:230px;background:var(--bg2);border:1px solid var(--line);border-radius:14px;padding:22px;text-align:center}
+  .login .card svg{width:48px;height:48px;color:#f2f3f5;margin:0 auto 12px}
+  .login .card .h{font-weight:500;letter-spacing:.05em;font-size:15px}
+  .login .card .s{color:var(--muted);font-size:11px;margin-top:4px}
+  .login .card .f{margin-top:16px;height:34px;border-radius:8px;border:1px solid var(--line);background:#0c0d10}
+  .login .card .b{margin-top:10px;height:34px;border-radius:8px;background:var(--fg);color:var(--bg);font-size:12px;font-weight:500;display:flex;align-items:center;justify-content:center;letter-spacing:.05em}
+
+  /* mock: browser tab */
+  .tab{height:230px;display:flex;align-items:flex-start;justify-content:center;padding-top:26px;background:#0c0d10;border-radius:12px;border:1px solid var(--line)}
+  .tabbar{width:300px}
+  .tabbar .t{display:flex;align-items:center;gap:8px;background:var(--bg2);border:1px solid var(--line);border-bottom:none;border-radius:9px 9px 0 0;padding:8px 12px;font-size:12px;color:var(--fg);width:200px}
+  .tabbar .t svg{width:16px;height:16px;color:#f2f3f5;flex:none}
+  .tabbar .t .x{margin-left:auto;color:var(--muted)}
+  .tabbar .page{height:120px;background:var(--bg2);border:1px solid var(--line);border-radius:0 9px 9px 9px}
+
+  /* lockup */
+  .lockups{display:grid;grid-template-columns:1fr 1fr;gap:18px}
+  @media(max-width:760px){.lockups{grid-template-columns:1fr}}
+  .lk{border:1px solid var(--line);border-radius:16px;padding:30px;display:flex;align-items:center;gap:18px;background:var(--bg2)}
+  .lk.vert{flex-direction:column;gap:14px;text-align:center}
+  .lk svg{width:64px;height:64px;color:var(--fg);flex:none}
+  .lk .name{font-weight:200;font-size:30px;letter-spacing:.06em}
+  .lk .name b{font-weight:500}
+  .lk .sub{color:var(--muted);font-size:11px;letter-spacing:.22em;text-transform:uppercase;margin-top:2px}
+
+  /* notes + downloads */
+  .grid2{display:grid;grid-template-columns:1.4fr 1fr;gap:26px}
+  @media(max-width:760px){.grid2{grid-template-columns:1fr}}
+  .notes p{color:#c7cbd1;font-weight:300;font-size:14px;margin-bottom:14px}
+  .notes .k{color:var(--fg);font-weight:500}
+  .dl{border:1px solid var(--line);border-radius:16px;padding:20px;background:var(--bg2)}
+  .dl h3{font-size:12px;letter-spacing:.14em;text-transform:uppercase;color:var(--muted);margin-bottom:14px}
+  .dl a{display:flex;align-items:center;gap:10px;padding:10px 12px;border-radius:9px;color:var(--fg);text-decoration:none;font-size:13px;border:1px solid transparent;transition:.2s}
+  .dl a:hover{background:rgba(255,255,255,.05);border-color:var(--line)}
+  .dl a .e{font-family:'JetBrains Mono',monospace;font-size:10px;color:var(--muted);margin-left:auto}
+  .dl a svg{width:18px;height:18px;color:var(--fg)}
+
+  footer{padding:46px 0 80px;border-top:1px solid var(--line);text-align:center}
+  footer p{font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--muted);letter-spacing:.16em;line-height:2}
+
+  /* light theme */
+  body.light{--bg:#f6f7f8;--bg2:#fff;--fg:#14161a;--muted:#6b7178;--line:rgba(0,0,0,.1)}
+  body.light .toolbar{background:rgba(246,247,248,.8)}
+  body.light .sb .rail,body.light .sb .canvas,body.light .tab,body.light .surf.dark{background:#0c0d10;color:#f2f3f5}
+</style>
+</head>
+<body>
+
+<!-- shared symbol defs -->
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <defs>
+    <g id="mark">
+      <path fill="currentColor" fill-rule="evenodd" d="M22 16 L78 16 A6 6 0 0 1 84 22 L84 78 A6 6 0 0 1 78 84 L22 84 A6 6 0 0 1 16 78 L16 22 A6 6 0 0 1 22 16 Z M30 24.5 A3.3 3.3 0 0 0 30 31.1 L70 31.1 A3.3 3.3 0 0 0 70 24.5 Z M30 36.5 A3.3 3.3 0 0 0 30 43.1 L45 43.1 A3.3 3.3 0 0 0 45 36.5 Z M55 36.5 A3.3 3.3 0 0 0 55 43.1 L70 43.1 A3.3 3.3 0 0 0 70 36.5 Z M50 50 A10.5 10.5 0 0 0 44.4 69.4 L42.1 77.2 A2.9 2.9 0 0 0 44.9 81 L55.1 81 A2.9 2.9 0 0 0 57.9 77.2 L55.6 69.4 A10.5 10.5 0 0 0 50 50 Z M50 55.3 A5.2 5.2 0 1 1 49.99 55.3 Z"/>
+    </g>
+    <g id="mark-fav">
+      <path fill="currentColor" fill-rule="evenodd" d="M22 16 L78 16 A6 6 0 0 1 84 22 L84 78 A6 6 0 0 1 78 84 L22 84 A6 6 0 0 1 16 78 L16 22 A6 6 0 0 1 22 16 Z M30 27 A4 4 0 0 0 30 35 L70 35 A4 4 0 0 0 70 27 Z M50 44 A12 12 0 0 0 43.6 66.2 L40.9 75.1 A3.2 3.2 0 0 0 44 79.5 L56 79.5 A3.2 3.2 0 0 0 59.1 75.1 L56.4 66.2 A12 12 0 0 0 50 44 Z M50 50.2 A6 6 0 1 1 49.99 50.2 Z"/>
+    </g>
+  </defs>
+</svg>
+
+<div class="toolbar">
+  <div class="brand">
+    <svg class="g mark logo-color" viewBox="0 0 100 100"><use href="#mark"/></svg>
+    <div><b>OS-Baka</b> &nbsp;<span class="mono">Rack Lock · 终稿</span></div>
+  </div>
+  <div class="controls">
+    <button id="themeBtn">◐ 深 / 浅</button>
+    <button id="famBtn">主标 ⇄ favicon</button>
+  </div>
+</div>
+
+<section class="hero" style="border-top:none">
+  <div class="stage"><svg class="mark logo-color" viewBox="0 0 100 100"><use href="#mark" id="heroUse"/></svg></div>
+  <h1>OS<b>·</b>Baka</h1>
+  <div class="tag">Rack Lock Mark · Monochrome System</div>
+  <p class="lead">一个硬朗的服务器机箱轮廓:顶部机架导轨 + 两个驱动仓,中央熔接一个锁孔——<b style="color:var(--fg);font-weight:500">机架(裸金属)</b> 与 <b style="color:var(--fg);font-weight:500">锁孔(全盘加密 / LUKS)</b> 一图双关。单路径 <span class="mono" style="font-size:12.5px">fill-rule="evenodd"</span>,真负空间镂空,任意底色通用。</p>
+</section>
+
+<div class="wrap">
+
+  <!-- scale -->
+  <section>
+    <div class="sec-h"><span class="n">01</span><h2>缩放表现</h2><div class="d">从 16px favicon 到 1024px,锁孔焦点始终成立。小尺寸自动切换到 favicon 变体。</div></div>
+    <div class="scale-row" id="scaleRow"></div>
+  </section>
+
+  <!-- surfaces -->
+  <section>
+    <div class="sec-h"><span class="n">02</span><h2>底色适配</h2><div class="d">同一路径 currentColor,深 / 浅 / 灰 / 品牌色四种表面均成立。</div></div>
+    <div class="surfaces">
+      <div class="surf dark"><svg class="mark" viewBox="0 0 100 100"><use href="#mark"/></svg><span class="cap mono">#0C0D10</span></div>
+      <div class="surf light"><svg class="mark" viewBox="0 0 100 100"><use href="#mark"/></svg><span class="cap mono onlight">#F6F7F8</span></div>
+      <div class="surf gray"><svg class="mark" viewBox="0 0 100 100"><use href="#mark"/></svg><span class="cap mono">#23262D</span></div>
+      <div class="surf invert-on-brand"><svg class="mark" viewBox="0 0 100 100"><use href="#mark"/></svg><span class="cap mono">ON BRAND</span></div>
+    </div>
+  </section>
+
+  <!-- lockups -->
+  <section>
+    <div class="sec-h"><span class="n">03</span><h2>标准组合 (Lockup)</h2><div class="d">水平 + 垂直两种锁定关系,留白比例固定。</div></div>
+    <div class="lockups">
+      <div class="lk">
+        <svg class="mark" viewBox="0 0 100 100"><use href="#mark"/></svg>
+        <div><div class="name">OS<b>·</b>Baka</div><div class="sub">Bare-Metal Provisioning</div></div>
+      </div>
+      <div class="lk vert">
+        <svg class="mark" viewBox="0 0 100 100"><use href="#mark"/></svg>
+        <div><div class="name">OS<b>·</b>Baka</div><div class="sub">PXE · LUKS · DHCP</div></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- app mockups -->
+  <section>
+    <div class="sec-h"><span class="n">04</span><h2>实际应用预览</h2><div class="d">放进 OS-Baka 真实界面:侧栏头部 / 登录页 / 浏览器标签。</div></div>
+    <div class="mocks">
+      <!-- sidebar -->
+      <div class="mock">
+        <div class="title">SIDEBAR HEADER · 28px</div>
+        <div class="body">
+          <div class="sb">
+            <div class="rail">
+              <div class="hd"><svg class="mark" viewBox="0 0 100 100"><use href="#mark"/></svg><span class="t">OS-Baka</span></div>
+              <div class="nav on"><span class="dot"></span>Dashboard</div>
+              <div class="nav"><span class="dot"></span>Nodes</div>
+              <div class="nav"><span class="dot"></span>Key Vault</div>
+              <div class="nav"><span class="dot"></span>DHCP</div>
+            </div>
+            <div class="canvas"></div>
+          </div>
+        </div>
+      </div>
+      <!-- login -->
+      <div class="mock">
+        <div class="title">LOGIN · 48px</div>
+        <div class="body">
+          <div class="login">
+            <div class="card">
+              <svg class="mark" viewBox="0 0 100 100"><use href="#mark"/></svg>
+              <div class="h">OS-Baka</div>
+              <div class="s mono">PROVISIONING CONSOLE</div>
+              <div class="f"></div><div class="b">登 录</div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <!-- browser tab -->
+      <div class="mock">
+        <div class="title">BROWSER FAVICON · 16px (favicon 变体)</div>
+        <div class="body">
+          <div class="tab">
+            <div class="tabbar">
+              <div class="t"><svg viewBox="0 0 100 100"><use href="#mark-fav"/></svg><span>OS-Baka · Dashboard</span><span class="x">×</span></div>
+              <div class="page"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <!-- app icon -->
+      <div class="mock">
+        <div class="title">APP ICON · rounded tile</div>
+        <div class="body" style="display:flex;align-items:center;justify-content:center;height:auto;min-height:174px;gap:26px">
+          <div style="width:88px;height:88px;border-radius:20px;background:#0c0d10;display:flex;align-items:center;justify-content:center;border:1px solid var(--line)">
+            <svg style="width:54px;height:54px;color:#f2f3f5" viewBox="0 0 100 100"><use href="#mark-fav"/></svg>
+          </div>
+          <div style="width:88px;height:88px;border-radius:20px;background:#f2f3f5;display:flex;align-items:center;justify-content:center">
+            <svg style="width:54px;height:54px;color:#0c0d10" viewBox="0 0 100 100"><use href="#mark-fav"/></svg>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- notes + downloads -->
+  <section>
+    <div class="sec-h"><span class="n">05</span><h2>设计说明 & 资产下载</h2></div>
+    <div class="grid2">
+      <div class="notes">
+        <p><span class="k">概念。</span>硬直角机箱 = 裸金属机架;内部镂空形成 1 条全宽机架导轨 + 2 个驱动仓;熔接的锁孔承载 LUKS 全盘加密叙事——字面意义的 "Rack Lock"。</p>
+        <p><span class="k">技术。</span>单一 <span class="mono" style="font-size:12.5px">&lt;path&gt;</span>,<span class="mono" style="font-size:12.5px">fill="currentColor"</span> + <span class="mono" style="font-size:12.5px">fill-rule="evenodd"</span>。所有内部细节都是真镂空(在非白底验证透明),不依赖背景色变量,Chrome 与 rsvg-convert 渲染一致。</p>
+        <p><span class="k">为什么用实心而非描边。</span>实心填充在缩小时远比细平行描边稳。直角(rx=6)刻意保留——大圆角会被读成盾牌 / 记事本,硬角才说"金属盒子"。</p>
+        <p><span class="k">favicon 变体。</span>同机箱,精简为 1 条粗导轨 + 1 个加大锁孔(无分仓),≤24px 不糊。两者同构,是一个家族。</p>
+        <p><span class="k">用法。</span>≥32px(侧栏 / 登录 / 文档)用主标;≤24px(favicon / 应用图标)用 favicon 变体。颜色用 CSS <span class="mono" style="font-size:12.5px">color:</span> 控制。</p>
+      </div>
+      <div class="dl">
+        <h3>下载</h3>
+        <a href="svg/osbaka-mark.svg" download><svg viewBox="0 0 100 100"><use href="#mark"/></svg>主标 (SVG · currentColor)<span class="e">SVG</span></a>
+        <a href="svg/osbaka-favicon.svg" download><svg viewBox="0 0 100 100"><use href="#mark-fav"/></svg>Favicon 变体 (SVG)<span class="e">SVG</span></a>
+        <a href="png/osbaka-mark-512.png" download><svg viewBox="0 0 100 100"><use href="#mark"/></svg>主标 512px<span class="e">PNG</span></a>
+        <a href="png/osbaka-mark-1024.png" download><svg viewBox="0 0 100 100"><use href="#mark"/></svg>主标 1024px<span class="e">PNG</span></a>
+        <a href="png/osbaka-mark-512-ondark.png" download><svg viewBox="0 0 100 100"><use href="#mark"/></svg>主标 白色 / 深底 512px<span class="e">PNG</span></a>
+        <a href="png/osbaka-favicon-32.png" download><svg viewBox="0 0 100 100"><use href="#mark-fav"/></svg>Favicon 32px<span class="e">PNG</span></a>
+      </div>
+    </div>
+  </section>
+
+</div>
+
+<footer><p>OS-BAKA · RACK LOCK MARK<br>monochrome geometric · single evenodd path · 2026</p></footer>
+
+<script>
+  // scale matrix — small sizes use favicon variant
+  const sizes=[16,24,32,48,64,96,128];
+  const FAV_BELOW=28;
+  const row=document.getElementById('scaleRow');
+  sizes.forEach(s=>{
+    const fav = s<FAV_BELOW;
+    const pad = Math.max(6, Math.round(s*0.18));
+    const box = s+pad*2;
+    const item=document.createElement('div');
+    item.className='scale-item';
+    item.innerHTML=`
+      <div class="frame logo-color" style="width:${box}px;height:${box}px">
+        <svg class="mark" viewBox="0 0 100 100" width="${s}" height="${s}"><use href="#${fav?'mark-fav':'mark'}"/></svg>
+      </div>
+      <div class="lbl">${s}px${fav?' · fav':''}</div>`;
+    row.appendChild(item);
+  });
+
+  // theme
+  const tb=document.getElementById('themeBtn');
+  tb.onclick=()=>{document.body.classList.toggle('light');tb.classList.toggle('active');};
+  // family swap for hero
+  const fb=document.getElementById('famBtn');
+  let fav=false;
+  fb.onclick=()=>{fav=!fav;fb.classList.toggle('active',fav);
+    document.getElementById('heroUse').setAttribute('href',fav?'#mark-fav':'#mark');};
+</script>
+</body>
+</html>

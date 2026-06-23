@@ -2,6 +2,7 @@
 import React from 'react';
 import { NavLink } from 'react-router-dom';
 import { LayoutDashboard, Server, Key, Terminal, Settings, Network, BookOpen, ClipboardList } from 'lucide-react';
+import { RackLockMark } from './RackLockMark';
 
 export const Sidebar: React.FC = () => {
   const menuItems = [
@@ -18,8 +19,8 @@ export const Sidebar: React.FC = () => {
   return (
     <aside className="w-64 bg-white/80 dark:bg-gray-900/80 backdrop-blur-xl h-screen fixed left-0 top-0 border-r border-gray-200 dark:border-gray-800 z-20 flex flex-col transition-colors duration-300">
       <div className="p-6 flex items-center gap-3">
-        <div className="w-8 h-8 bg-black dark:bg-white rounded-lg flex items-center justify-center text-white dark:text-black font-bold text-sm transition-colors">
-          OB
+        <div className="w-8 h-8 bg-black dark:bg-white rounded-lg flex items-center justify-center text-white dark:text-black transition-colors">
+          <RackLockMark className="w-5 h-5" />
         </div>
         <h1 className="text-xl font-bold tracking-tight text-gray-900 dark:text-white">OS-Baka</h1>
       </div>
